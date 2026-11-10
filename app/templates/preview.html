@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Предпросмотр: {{ test.discipline }} — Тесты для аккредитации{% endblock %}
+{% set letters = "абвгдежзиклмнопрстуфхцчшщэюя" %}
+{% block content %}
+<div class="page-narrow preview">
+  <p class="no-print"><a href="/tests/{{ test.id }}">Вернуться к редактированию</a></p>
+  <div class="sheet">
+    <div class="page-head">
+      <div>
+        <h1>{{ test.discipline or 'Без названия' }}</h1>
+        <p>{{ test.teacher }}{% if test.department %}, {{ test.department }}{% endif %}</p>
+      </div>
+      <div class="no-print">
+        {% if show_answers %}
+        <a class="btn btn-small" href="?answers=0">Скрыть ответы</a>
+        {% else %}
+        <a class="btn btn-small" href="?answers=1">Показать правильные ответы</a>
+        {% endif %}
+      </div>
+    </div>
+    <p class="hint">Так вопросы будут выглядеть для студента (в Moodle оформление немного другое, порядок вариантов перемешается).
+      {% if test.settings.questions_per_attempt %}Студент получит {{ test.settings.questions_per_attempt }} случайных вопросов из {{ test.questions|length }}.{% endif %}
+      {% if test.settings.time_limit %}Время: {{ test.settings.time_limit }} мин.{% endif %}</p>
+    {% if not test.questions %}<p>В тесте пока нет вопросов.</p>{% endif %}
+    {% for q in test.questions %}
+    <section class="pq">
+      <div class="pq-head"><strong>Вопрос {{ loop.index }}</strong><span>{{ q.points|round(1)|string|replace('.0', '')|replace('.', ',') }} б.</span><span>{{ QUESTION_TYPES[q.type] }}</span></div>
+      {% if q.text %}<p class="pq-text">{{ q.text }}</p>{% endif %}
+      {% if q.image %}<img src="/images/{{ q.image }}" alt="Картинка к вопросу {{ loop.index }}">{% endif %}
+      {% if q.type in ('single', 'multiple') %}
+        {% for o in q.options if o.text.strip() %}
+        <div class="popt {% if show_answers and o.correct %}right{% endif %}"><span class="bubble {% if q.type == 'multiple' %}square{% endif %}">{{ letters[loop.index0] if loop.index0 < letters|length else loop.index }}</span>{{ o.text }}</div>
+        {% endfor %}
+      {% elif q.type == 'truefalse' %}
+        <div class="popt {% if show_answers and q.correct %}right{% endif %}"><span class="bubble"></span>Верно</div>
+        <div class="popt {% if show_answers and not q.correct %}right{% endif %}"><span class="bubble"></span>Неверно</div>
+      {% elif q.type in ('short', 'numerical') %}
+        <div class="fake-input">Поле для ответа</div>
+        {% if show_answers %}<div class="right-answer">Ответ: {% if q.type == 'short' %}{{ q.answers|select|join('; ') }}{% else %}{{ q.number }}{% if q.tolerance %} ± {{ q.tolerance }}{% endif %}{% endif %}</div>{% endif %}
+      {% elif q.type == 'matching' %}
+        {% for p in q.pairs if p.left.strip() and p.right.strip() %}
+        <div class="pmatch"><span>{{ p.left }}</span><span class="fake-input">{% if show_answers %}{{ p.right }}{% else %}Выберите…{% endif %}</span></div>
+        {% endfor %}
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

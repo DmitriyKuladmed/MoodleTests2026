@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "moodle-tests",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "--factory", "app.main:build_app", "--port", "8765", "--reload"],
+      "port": 8765
+    }
+  ]
+}

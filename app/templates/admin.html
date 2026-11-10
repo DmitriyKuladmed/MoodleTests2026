@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Админка — Тесты для аккредитации{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Админка</h1>
+      <p>Выгрузка тестов для Moodle, удалённые тесты и пароли.</p>
+    </div>
+    <div class="admin-actions">
+      <a class="btn btn-primary" href="/admin/export.zip">Скачать все тесты для Moodle</a>
+      <a class="btn" href="/admin/export.zip?ready_only=1">Только готовые</a>
+      <a class="btn" href="/admin/backup.db">Резервная копия базы</a>
+    </div>
+  </div>
+
+  {% if msg == 'restored' %}<div class="alert alert-ok">Тест восстановлен.</div>{% endif %}
+  {% if msg == 'password_editor' %}<div class="alert alert-ok">Пароль для преподавателей изменён. Все, кто вошёл со старым паролем, должны войти заново.</div>{% endif %}
+  {% if msg == 'password_admin' %}<div class="alert alert-ok">Пароль администратора изменён.</div>{% endif %}
+  {% if msg == 'weak' %}<div class="alert alert-error">Укажите логин и пароль не короче 8 символов.</div>{% endif %}
+
+  <dl class="totals">
+    <div><dt>Тестов</dt><dd>{{ totals.tests }}</dd></div>
+    <div><dt>Готовы к загрузке</dt><dd>{{ totals.ready }}</dd></div>
+    <div><dt>С ошибками</dt><dd>{{ totals.errors }}</dd></div>
+    <div><dt>Вопросов всего</dt><dd>{{ totals.questions }}</dd></div>
+  </dl>
+
+  {% if tests %}
+  <table class="list" id="tests-table">
+    <thead>
+      <tr>
+        <th>Дисциплина</th>
+        <th>Преподаватель</th>
+        <th>Кафедра</th>
+        <th class="num">Вопросов</th>
+        <th>Состояние</th>
+        <th>Изменён</th>
+        <th><span class="visually-hidden">Действия</span></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in tests %}
+      <tr>
+        <td><a class="primary" href="/tests/{{ t.id }}">{{ t.discipline or 'Без названия' }}</a></td>
+        <td>{{ t.teacher }}</td>
+        <td class="muted">{{ t.department }}</td>
+        <td class="num">{{ t.questions }}</td>
+        <td>{% include "_state.html" %}</td>
+        <td class="muted">{{ t.updated }}</td>
+        <td class="actions"><a class="btn btn-small" href="/admin/export/{{ t.id }}.xml">XML</a><a class="btn btn-small" href="/tests/{{ t.id }}/preview" target="_blank" rel="noopener">Просмотр</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="sheet empty"><h2>Тестов пока нет</h2><p>Когда преподаватели создадут тесты, они появятся здесь.</p></div>
+  {% endif %}
+
+  <section class="section">
+    <h2>Как загрузить в Moodle</h2>
+    <ol class="steps">
+      <li>Скачайте архив и распакуйте. В нём по одному файлу XML на дисциплину. Файлы тестов с ошибками лежат в папке «с ошибками». В tests.csv собраны настройки каждого теста: время, сколько вопросов показывать, попытки.</li>
+      <li>В курсе Moodle откройте «Банк вопросов», затем «Импорт», выберите «Формат Moodle XML» и файл дисциплины.</li>
+      <li>Вопросы попадут в категорию, выбранную при импорте. Затем добавьте их в тест (можно «случайный вопрос» из этой категории).</li>
+    </ol>
+  </section>
+
+  {% if deleted %}
+  <section class="section">
+    <h2>Удалённые тесты</h2>
+    <p>Преподаватели могут удалить тест сами. Здесь его можно вернуть.</p>
+    <table class="list">
+      <thead><tr><th>Дисциплина</th><th>Преподаватель</th><th class="num">Вопросов</th><th>Удалён</th><th><span class="visually-hidden">Действия</span></th></tr></thead>
+      <tbody>
+      {% for t in deleted %}
+        <tr>
+          <td>{{ t.discipline or 'Без названия' }}</td>
+          <td>{{ t.teacher }}</td>
+          <td class="num">{{ t.questions }}</td>
+          <td class="muted">{{ t.deleted }}</td>
+          <td class="actions"><form method="post" action="/admin/tests/{{ t.id }}/restore"><button class="btn btn-small" type="submit">Восстановить</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  <section class="section" id="accounts">
+    <h2>Логины и пароли</h2>
+    <p>После смены пароля все, кто вошёл со старым, будут выведены из системы.</p>
+    <div class="accounts">
+      <form class="sheet" method="post" action="/admin/accounts">
+        <h3>Для преподавателей</h3>
+        <p>Один общий вход. Сейчас логин: <strong>{{ editor_login }}</strong></p>
+        <input type="hidden" name="account" value="editor">
+        <label class="field"><span>Логин</span><input type="text" name="login" value="{{ editor_login }}" required autocomplete="off"></label>
+        <label class="field"><span>Новый пароль</span><input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+        <button class="btn" type="submit">Сменить пароль преподавателей</button>
+      </form>
+      <form class="sheet" method="post" action="/admin/accounts">
+        <h3>Администратор</h3>
+        <p>Ваш вход. Сейчас логин: <strong>{{ admin_login }}</strong></p>
+        <input type="hidden" name="account" value="admin">
+        <label class="field"><span>Логин</span><input type="text" name="login" value="{{ admin_login }}" required autocomplete="off"></label>
+        <label class="field"><span>Новый пароль</span><input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+        <button class="btn" type="submit">Сменить пароль администратора</button>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}

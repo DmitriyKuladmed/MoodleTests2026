@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Новый тест — Тесты для аккредитации{% endblock %}
+{% block content %}
+<div class="page-narrow">
+  <p><a href="/">Все тесты</a></p>
+  <div class="sheet">
+    <h1>Новый тест</h1>
+    <p class="hint">Вопросы добавите на следующем шаге. Эти данные можно будет изменить.</p>
+    {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+    {% if duplicate %}
+    <div class="alert alert-warn" role="alert">
+      Тест по дисциплине «{{ duplicate.discipline }}» уже есть (заполняет {{ duplicate.teacher or 'не указано' }}).
+      <a href="/tests/{{ duplicate.id }}">Открыть его</a> или создайте ещё один, если это другой тест.
+    </div>
+    {% endif %}
+    <form method="post" action="/tests/new">
+      <label class="field"><span>Дисциплина</span>
+        <input type="text" name="discipline" value="{{ form.discipline or '' }}" required maxlength="300" autofocus>
+        <div class="hint">Как в учебном плане, например «Теоретическая механика».</div>
+      </label>
+      <label class="field"><span>Преподаватель, который заполняет тест</span>
+        <input type="text" name="teacher" value="{{ form.teacher or '' }}" required maxlength="300" placeholder="Фамилия Имя Отчество">
+      </label>
+      <label class="field"><span>Кафедра</span>
+        <input type="text" name="department" value="{{ form.department or '' }}" maxlength="300">
+        <div class="hint">Необязательно.</div>
+      </label>
+      {% if duplicate %}<input type="hidden" name="confirm" value="1">{% endif %}
+      <button class="btn btn-primary" type="submit">{% if duplicate %}Всё равно создать{% else %}Создать и перейти к вопросам{% endif %}</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

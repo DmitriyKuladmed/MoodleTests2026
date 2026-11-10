@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Тесты</h1>
+      <p>Один тест — одна дисциплина. Найдите свою дисциплину в списке или создайте для неё тест. Всё, что вы вводите, сохраняется автоматически.</p>
+    </div>
+    {% if tests %}<a class="btn btn-primary" href="/tests/new">Создать тест</a>{% endif %}
+  </div>
+
+  {% if tests %}
+  <div class="toolbar">
+    <input type="search" id="filter" placeholder="Поиск по дисциплине, преподавателю или кафедре" aria-label="Поиск">
+  </div>
+  <table class="list" id="tests-table">
+    <thead>
+      <tr>
+        <th>Дисциплина</th>
+        <th>Преподаватель</th>
+        <th>Кафедра</th>
+        <th class="num">Вопросов</th>
+        <th>Состояние</th>
+        <th>Изменён</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in tests %}
+      <tr class="clickable" data-href="/tests/{{ t.id }}">
+        <td><a class="primary" href="/tests/{{ t.id }}">{{ t.discipline or 'Без названия' }}</a></td>
+        <td>{{ t.teacher }}</td>
+        <td class="muted">{{ t.department }}</td>
+        <td class="num">{{ t.questions }}</td>
+        <td>{% include "_state.html" %}</td>
+        <td class="muted">{{ t.updated }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint" id="filter-empty" hidden>Ничего не найдено. Проверьте написание или создайте новый тест.</p>
+  {% else %}
+  <div class="sheet empty">
+    <h2>Тестов пока нет</h2>
+    <p>Создайте тест по своей дисциплине — потом добавите в него вопросы.</p>
+    <a class="btn btn-primary" href="/tests/new">Создать тест</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/list.js?v={{ static_version }}" defer></script>{% endblock %}
