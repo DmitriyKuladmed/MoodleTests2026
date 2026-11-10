@@ -64,8 +64,35 @@ def test_unnumbered_blocks():
 def test_warnings():
     r = parse_text("1. Без ответа\nа) x\nб) y\n2. Пусто")
     msgs = [(w["index"], w["message"]) for w in r["warnings"]]
-    assert (0, "Не отмечен правильный ответ") in msgs
+    assert (0, "Нет верного ответа") in msgs
     assert (1, "Нет вариантов ответа") in msgs
+
+
+def test_marked_question_line_is_not_an_answer():
+    # Вопрос в Word выделен жирным — при вставке он тоже получил «*».
+    (q,) = parse_text("1. Столица Беларуси? *\nа) Брест\nб) Минск *")["questions"]
+    assert q["text"] == "Столица Беларуси?"
+    assert [o["correct"] for o in q["options"]] == [False, True]
+    (q,) = parse_text("Столица Беларуси? *\nБрест\nМинск *")["questions"]
+    assert q["text"] == "Столица Беларуси?"
+
+
+def test_numbered_questions_with_unlabeled_options():
+    r = parse_text("1. Столица Беларуси?\nБрест\nМинск *\nГродно\n\n2. Самая длинная река?\nДнепр\nНеман\nОтвет: Днепр")
+    q1, q2 = r["questions"]
+    assert q1["text"] == "Столица Беларуси?"
+    assert [(o["text"], o["correct"]) for o in q1["options"]] == [("Брест", False), ("Минск", True), ("Гродно", False)]
+    assert [o["correct"] for o in q2["options"]] == [True, False]
+    assert r["warnings"] == []
+
+
+def test_unnumbered_question_after_numbered_one():
+    r = parse_text("1. Единица силы?\nа) Джоуль\nб) Ньютон *\n\nВекторные величины\nскорость *\nмасса\nсила *")
+    q1, q2 = r["questions"]
+    assert [o["correct"] for o in q1["options"]] == [False, True]
+    assert q2["text"] == "Векторные величины"
+    assert q2["type"] == "multiple"
+    assert [o["text"] for o in q2["options"]] == ["скорость", "масса", "сила"]
 
 
 def test_wrapped_option_line():

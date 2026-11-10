@@ -3,24 +3,21 @@
 {% set letters = "абвгдежзиклмнопрстуфхцчшщэюя" %}
 {% block content %}
 <div class="page-narrow preview">
-  <p class="no-print"><a href="/tests/{{ test.id }}">Вернуться к редактированию</a></p>
+  <a class="back no-print" href="/tests/{{ test.id }}">← К редактированию</a>
   <div class="sheet">
     <div class="page-head">
       <div>
         <h1>{{ test.discipline or 'Без названия' }}</h1>
-        <p>{{ test.teacher }}{% if test.department %}, {{ test.department }}{% endif %}</p>
+        <p class="hint">{{ test.teacher }}{% if test.settings.questions_per_attempt %}. Студент получит {{ test.settings.questions_per_attempt }} из {{ test.questions|length }} вопросов{% endif %}{% if test.settings.time_limit %}, {{ test.settings.time_limit }} мин{% endif %}</p>
       </div>
       <div class="no-print">
         {% if show_answers %}
         <a class="btn btn-small" href="?answers=0">Скрыть ответы</a>
         {% else %}
-        <a class="btn btn-small" href="?answers=1">Показать правильные ответы</a>
+        <a class="btn btn-small" href="?answers=1">Показать ответы</a>
         {% endif %}
       </div>
     </div>
-    <p class="hint">Так вопросы будут выглядеть для студента (в Moodle оформление немного другое, порядок вариантов перемешается).
-      {% if test.settings.questions_per_attempt %}Студент получит {{ test.settings.questions_per_attempt }} случайных вопросов из {{ test.questions|length }}.{% endif %}
-      {% if test.settings.time_limit %}Время: {{ test.settings.time_limit }} мин.{% endif %}</p>
     {% if not test.questions %}<p>В тесте пока нет вопросов.</p>{% endif %}
     {% for q in test.questions %}
     <section class="pq">

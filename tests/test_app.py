@@ -75,7 +75,7 @@ def test_create_save_and_conflict(editor):
     test_id = create(editor)
     data = editor.get(f"/api/tests/{test_id}").json()
     assert data["discipline"] == "Физика" and data["version"] == 1
-    assert any(i["message"] == "В тесте нет ни одного вопроса" for i in data["issues"])
+    assert any(i["message"] == "Добавьте вопросы" for i in data["issues"])
 
     body = {**data, "questions": [{"type": "truefalse", "text": "Земля круглая", "correct": True}]}
     r = editor.put(f"/api/tests/{test_id}", json=body, headers=H)

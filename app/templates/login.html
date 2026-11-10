@@ -5,7 +5,7 @@
 <div class="login sheet">
   <div class="login-bubbles" aria-hidden="true"><span></span><span class="on"></span><span></span><span></span></div>
   <h1>Тесты для аккредитации</h1>
-  <p>Войдите, чтобы заполнить тест по своей дисциплине. Логин и пароль выдаёт администратор.</p>
+  <p>Логин и пароль — у администратора.</p>
   {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
   <form method="post" action="/login">
     <input type="hidden" name="next" value="{{ next }}">
@@ -15,7 +15,7 @@
     <label class="field"><span>Пароль</span>
       <input type="password" name="password" autocomplete="current-password" required>
     </label>
-    <button class="btn btn-primary" type="submit">Войти</button>
+    <button class="btn btn-primary btn-big" type="submit">Войти</button>
   </form>
 </div>
 {% endblock %}

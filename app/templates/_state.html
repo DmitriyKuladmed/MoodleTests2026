@@ -1,1 +1,1 @@
-{% if t.state == 'ready' %}<span class="state state-ready">Готов к загрузке</span>{% elif t.state == 'errors' %}<span class="state state-errors">Есть ошибки: {{ t.errors }}</span>{% else %}<span class="state state-draft">Черновик</span>{% endif %}
+{% if t.state == 'ready' %}<span class="state state-ready">Готов</span>{% elif t.state == 'errors' and t.questions %}<span class="state state-errors">Нужно исправить</span>{% else %}<span class="state state-draft">Заполняется</span>{% endif %}

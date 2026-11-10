@@ -1,120 +1,95 @@
 {% extends "base.html" %}
 {% block title %}{{ test.discipline or 'Тест' }} — Тесты для аккредитации{% endblock %}
+{% block body_class %}editor-body{% endblock %}
 {% block content %}
 <div class="banner" id="banner" role="alert"></div>
 
-<div class="editor" id="editor" data-test-id="{{ test.id }}">
-  <div class="editor-main">
-    <p class="no-print"><a href="/">Все тесты</a></p>
-
-    <section class="sheet test-head" aria-label="О тесте">
-      <label class="field"><span>Дисциплина</span>
-        <input type="text" class="discipline-input" data-field="discipline" maxlength="300" required>
-      </label>
-      <div class="grid">
-        <label class="field"><span>Преподаватель, который заполняет тест</span>
-          <input type="text" data-field="teacher" maxlength="300" placeholder="Фамилия Имя Отчество">
-        </label>
-        <label class="field"><span>Кафедра</span>
-          <input type="text" data-field="department" maxlength="300">
-        </label>
-      </div>
-      <ul class="issues test-issues" id="test-issues"></ul>
-
-      <details class="settings" id="settings">
-        <summary>Настройки теста для Moodle</summary>
-        <div class="settings-grid">
-          <label class="field"><span>Время на тест, мин</span>
-            <input type="number" min="1" max="600" step="1" data-setting="time_limit" placeholder="Без ограничения">
-          </label>
-          <label class="field"><span>Вопросов студенту</span>
-            <input type="number" min="1" step="1" data-setting="questions_per_attempt" placeholder="Все">
-            <div class="hint">Случайная выборка из всех вопросов.</div>
-          </label>
-          <label class="field"><span>Попыток</span>
-            <input type="number" min="1" max="100" step="1" data-setting="attempts" placeholder="Без ограничения">
-          </label>
-          <label class="field"><span>Проходной балл, %</span>
-            <input type="number" min="1" max="100" step="1" data-setting="pass_percent" placeholder="Не задан">
-          </label>
-          <div class="field wide">
-            <label class="check"><input type="checkbox" data-setting="shuffle_questions">Перемешивать вопросы для каждого студента</label>
-          </div>
-          <label class="field wide"><span>Комментарий для администратора</span>
-            <textarea data-setting="comment" rows="2" maxlength="5000" placeholder="Например: тест для групп специальности «Строительство»"></textarea>
-          </label>
-        </div>
-      </details>
-    </section>
-
-    <ol class="questions" id="questions" aria-label="Вопросы"></ol>
-
-    <section class="add-bar no-print" aria-label="Добавить вопрос">
-      <span class="label">Добавить вопрос</span>
-      <div class="add-buttons">
-        {% for key, label in types.items() %}
-        <button type="button" class="btn" data-add="{{ key }}">{{ label }}</button>
-        {% endfor %}
-      </div>
-      <div class="paste-line">
-        Тест уже набран в Word? <button type="button" class="add-row" id="open-paste">Вставьте его текстом целиком</button>, и вопросы разберутся сами.
-      </div>
-    </section>
+<div class="bar no-print" id="bar">
+  <div class="bar-inner">
+    <a class="bar-back" href="/">← Все тесты</a>
+    <span class="save" id="save-status" data-state="saved" aria-live="polite">Сохранено</span>
+    <button type="button" class="bar-errors" id="bar-errors" hidden></button>
+    <span class="bar-ready" id="bar-ready" hidden>✓ Тест готов</span>
+    <button type="button" class="btn btn-done" id="done-top">Готово</button>
   </div>
-
-  <aside class="side no-print" aria-label="Состояние теста">
-    <div class="sheet">
-      <div class="save-status" id="save-status" data-state="saved" aria-live="polite">Все изменения сохранены</div>
-      <div class="save-time" id="save-time"></div>
-    </div>
-    <div class="sheet">
-      <dl class="stats">
-        <div><dt>Вопросов</dt><dd id="stat-questions">0</dd></div>
-        <div><dt>Баллов</dt><dd id="stat-points">0</dd></div>
-      </dl>
-      <div id="problems"></div>
-    </div>
-    <div class="sheet stack" id="ready-box"></div>
-    <div class="sheet stack">
-      <a class="btn" href="/tests/{{ test.id }}/preview" target="_blank" rel="noopener">Посмотреть как студент</a>
-      <div class="small-links">
-        <button type="button" class="link" id="expand-settings">Настройки теста</button>
-        <button type="button" class="link btn-danger" id="delete-test">Удалить тест</button>
-      </div>
-    </div>
-  </aside>
 </div>
 
-<dialog id="paste-dialog" aria-labelledby="paste-title">
+<div class="editor" id="editor" data-test-id="{{ test.id }}">
+  <section class="sheet test-head" aria-label="О тесте">
+    <input type="text" class="title-input" data-field="discipline" maxlength="300" placeholder="Название дисциплины" aria-label="Дисциплина">
+    <div class="meta">
+      <label><span>Преподаватель</span><input type="text" data-field="teacher" maxlength="300" placeholder="ФИО"></label>
+      <label><span>Кафедра</span><input type="text" data-field="department" maxlength="300" placeholder="Необязательно"></label>
+    </div>
+    <ul class="issues" id="test-issues"></ul>
+    <details class="settings" id="settings">
+      <summary>Время и число вопросов</summary>
+      <div class="settings-grid">
+        <label class="field"><span>Время, мин</span>
+          <input type="number" min="1" max="600" step="1" data-setting="time_limit" placeholder="Без лимита"></label>
+        <label class="field"><span>Вопросов студенту</span>
+          <input type="number" min="1" step="1" data-setting="questions_per_attempt" placeholder="Все"></label>
+        <label class="field"><span>Попыток</span>
+          <input type="number" min="1" max="100" step="1" data-setting="attempts" placeholder="Сколько угодно"></label>
+        <label class="field"><span>Проходной балл, %</span>
+          <input type="number" min="1" max="100" step="1" data-setting="pass_percent" placeholder="Не задан"></label>
+        <label class="check wide"><input type="checkbox" data-setting="shuffle_questions">Перемешивать вопросы</label>
+        <label class="field wide"><span>Комментарий для администратора</span>
+          <textarea data-setting="comment" rows="2" maxlength="5000"></textarea></label>
+      </div>
+    </details>
+  </section>
+
+  <ol class="questions" id="questions" aria-label="Вопросы"></ol>
+
+  <section class="add-bar no-print" id="add-bar" aria-label="Добавить вопросы">
+    <h2 class="add-title" id="add-title">Добавьте вопросы</h2>
+    <div class="add-buttons">
+      <button type="button" class="btn btn-primary btn-big" data-add="single">+ Добавить вопрос</button>
+      <button type="button" class="btn btn-big" id="open-paste">Вставить из Word</button>
+      <details class="dropdown" id="other-types">
+        <summary class="btn btn-big btn-ghost">Другой тип вопроса</summary>
+        <div class="menu" role="menu">
+          <button type="button" class="menu-item" data-add="truefalse" role="menuitem"><b>Верно или неверно</b><span>Студент выбирает «верно» или «неверно»</span></button>
+          <button type="button" class="menu-item" data-add="short" role="menuitem"><b>Ответ словом</b><span>Студент сам пишет ответ</span></button>
+          <button type="button" class="menu-item" data-add="numerical" role="menuitem"><b>Ответ числом</b><span>Студент вводит число</span></button>
+          <button type="button" class="menu-item" data-add="matching" role="menuitem"><b>Соответствие</b><span>Соединить пары: термин — определение</span></button>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="finish no-print" id="finish">
+    <button type="button" class="btn btn-done btn-big" id="done-bottom">Готово — тест заполнен</button>
+    <div class="finish-links">
+      <a href="/tests/{{ test.id }}/preview" target="_blank" rel="noopener">Посмотреть как студент</a>
+      <button type="button" class="link link-danger" id="delete-test">Удалить тест</button>
+    </div>
+  </section>
+</div>
+
+<dialog id="paste-dialog" class="paste-dialog" aria-labelledby="paste-title">
   <div class="dialog-inner">
     <div class="dialog-head">
-      <div>
-        <h2 id="paste-title">Вставить вопросы текстом</h2>
-        <p>Скопируйте тест из Word и вставьте слева. Правильный ответ отметьте звёздочкой или строкой «Ответ:».</p>
-      </div>
+      <h2 id="paste-title">Вставить тест из Word</h2>
       <button type="button" class="icon-btn" data-close aria-label="Закрыть">✕</button>
     </div>
+    <ol class="paste-steps">
+      <li>Откройте тест в Word, нажмите <kbd>Ctrl</kbd>+<kbd>A</kbd> и <kbd>Ctrl</kbd>+<kbd>C</kbd></li>
+      <li>Нажмите в поле ниже и <kbd>Ctrl</kbd>+<kbd>V</kbd></li>
+    </ol>
     <div class="paste-cols">
-      <label><span class="visually-hidden">Текст теста</span>
-        <textarea id="paste-text" placeholder="1. Текст вопроса&#10;а) вариант&#10;б) правильный вариант *&#10;в) вариант"></textarea>
-      </label>
-      <div class="paste-preview" id="paste-preview">
-        <pre class="paste-example">1. Чему равно ускорение свободного падения?
-а) 8,9 м/с²
-б) 9,8 м/с² *
-в) 10,8 м/с²
-
-2. Выберите векторные величины
-а) скорость
-б) масса
-в) сила
-Ответ: а, в
-
-3. Столица Беларуси?
-Ответ: Минск</pre>
-        <p class="hint">Несколько правильных ответов → вопрос с несколькими ответами. Без вариантов, но со строкой «Ответ:» → короткий или числовой ответ.</p>
-      </div>
+      <textarea id="paste-text" aria-label="Текст теста" placeholder="Вставьте сюда текст теста"></textarea>
+      <div class="paste-preview" id="paste-preview"></div>
     </div>
+    <details class="paste-help">
+      <summary>Как отметить верные ответы?</summary>
+      <p>Выделите верный вариант в Word <b>жирным</b>, <u>подчёркиванием</u> или цветом — сайт это поймёт. Ещё можно поставить <b>*</b> после ответа или добавить строку «Ответ: б».</p>
+      <pre class="paste-example">1. Столица Беларуси?
+а) Брест
+б) Минск *
+в) Гродно</pre>
+    </details>
     <div class="dialog-foot">
       <button type="button" class="btn" data-close>Отмена</button>
       <button type="button" class="btn btn-primary" id="paste-add" disabled>Добавить вопросы</button>
@@ -122,9 +97,23 @@
   </div>
 </dialog>
 
+<dialog id="done-dialog" class="done-dialog" aria-labelledby="done-title">
+  <div class="dialog-inner done-inner">
+    <div class="done-mark" aria-hidden="true">✓</div>
+    <h2 id="done-title">Тест готов</h2>
+    <p>Администратор увидит его в списке. Если нужно что-то поправить — просто откройте тест снова.</p>
+    <div class="dialog-foot center">
+      <a class="btn btn-primary btn-big" href="/">К списку тестов</a>
+      <button type="button" class="btn btn-big" data-close>Остаться</button>
+    </div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-action"></button></div>
 
 <script type="application/json" id="initial-data">{{ payload | tojson }}</script>
-<script type="application/json" id="question-types">{{ types | tojson }}</script>
 {% endblock %}
-{% block scripts %}<script src="/static/editor.js?v={{ static_version }}" defer></script>{% endblock %}
+{% block scripts %}
+<script src="/static/word-paste.js?v={{ static_version }}" defer></script>
+<script src="/static/editor.js?v={{ static_version }}" defer></script>
+{% endblock %}

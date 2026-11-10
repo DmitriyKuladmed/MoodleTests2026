@@ -9,11 +9,11 @@ import re
 import uuid
 
 QUESTION_TYPES = {
-    "single": "Один правильный ответ",
-    "multiple": "Несколько правильных ответов",
-    "truefalse": "Верно / Неверно",
-    "short": "Короткий ответ (ввод текста)",
-    "numerical": "Числовой ответ",
+    "single": "Выбор одного ответа",
+    "multiple": "Выбор нескольких ответов",
+    "truefalse": "Верно или неверно",
+    "short": "Ответ словом",
+    "numerical": "Ответ числом",
     "matching": "Соответствие",
 }
 
@@ -171,75 +171,69 @@ def validate_question(q: dict) -> list[dict]:
     def warn(msg):
         issues.append(_issue("warning", msg, qid))
 
+    # Сообщения — короткие и говорят, что сделать.
     if not q["text"].strip() and not q["image"]:
-        err("Нет текста вопроса")
+        err("Напишите текст вопроса")
     if q["points"] <= 0:
-        err("Баллы за вопрос должны быть больше нуля")
+        err("Баллы должны быть больше нуля")
 
     t = q["type"]
     if t in ("single", "multiple"):
         opts = filled_options(q)
         correct = [o for o in opts if o["correct"]]
         if len(opts) < 2:
-            err("Нужно минимум два варианта ответа")
-        if t == "single":
-            if len(correct) == 0:
-                err("Не отмечен правильный ответ")
-            elif len(correct) > 1:
-                err("Отмечено несколько правильных ответов — выберите тип «Несколько правильных ответов»")
-        else:
-            if len(correct) == 0:
-                err("Не отмечен ни один правильный ответ")
-            elif len(correct) > MAX_CORRECT_MULTIPLE:
-                err(f"Правильных вариантов не может быть больше {MAX_CORRECT_MULTIPLE}")
-            elif len(opts) >= 2 and len(correct) == len(opts):
-                warn("Все варианты отмечены правильными — студент получит балл, выбрав всё")
+            err("Нужно хотя бы 2 варианта ответа")
+        if len(correct) == 0:
+            err("Отметьте верный ответ")
+        elif t == "single" and len(correct) > 1:
+            err("Отмечено несколько верных ответов")
+        elif len(correct) > MAX_CORRECT_MULTIPLE:
+            err(f"Не больше {MAX_CORRECT_MULTIPLE} верных ответов")
+        elif t == "multiple" and len(opts) >= 2 and len(correct) == len(opts):
+            warn("Все варианты отмечены верными")
         texts = [o["text"].strip().lower() for o in opts]
         if len(set(texts)) != len(texts):
-            warn("Есть одинаковые варианты ответа")
+            warn("Есть одинаковые варианты")
         if any(o["correct"] and not o["text"].strip() for o in q["options"]):
-            warn("Пустой вариант отмечен правильным — он не попадёт в тест")
+            warn("Верным отмечен пустой вариант")
     elif t == "short":
         if not filled(q["answers"]):
-            err("Не указан правильный ответ")
+            err("Впишите правильный ответ")
     elif t == "numerical":
         if parse_number(q["number"]) is None:
-            err("Правильный ответ должен быть числом")
+            err("Ответ должен быть числом")
         if q["tolerance"].strip():
             tol = parse_number(q["tolerance"])
             if tol is None or tol < 0:
-                err("Допустимая погрешность должна быть неотрицательным числом")
+                err("Погрешность должна быть числом не меньше 0")
     elif t == "matching":
         pairs = complete_pairs(q)
         half = [p for p in q["pairs"] if bool(p["left"].strip()) != bool(p["right"].strip())]
         if half:
-            err("Есть незаполненные пары — заполните обе стороны или удалите пару")
+            err("Заполните пары с обеих сторон")
         if len(pairs) < 2:
-            err("Нужно минимум две пары для соответствия")
+            err("Нужно хотя бы 2 пары")
         elif len(pairs) + len(filled(q["distractors"])) < 3:
-            err("Нужно минимум три ответа: добавьте третью пару или лишний вариант ответа")
+            err("Добавьте третью пару или лишний ответ")
         rights = [p["right"].strip().lower() for p in pairs] + [d.lower() for d in filled(q["distractors"])]
         if len(set(rights)) != len(rights):
-            warn("Одинаковые ответы в правой колонке — Moodle объединит их в один")
+            warn("Одинаковые ответы справа")
     return issues
 
 
 def validate_test(test: dict) -> list[dict]:
     issues: list[dict] = []
     if not test["discipline"].strip():
-        issues.append(_issue("error", "Не указано название дисциплины"))
+        issues.append(_issue("error", "Укажите дисциплину"))
     if not test["teacher"].strip():
-        issues.append(_issue("error", "Не указан преподаватель, который заполняет тест"))
+        issues.append(_issue("error", "Укажите ФИО преподавателя"))
     questions = test["questions"]
     if not questions:
-        issues.append(_issue("error", "В тесте нет ни одного вопроса"))
+        issues.append(_issue("error", "Добавьте вопросы"))
     per_attempt = test["settings"].get("questions_per_attempt")
     if per_attempt and questions and per_attempt > len(questions):
         issues.append(
-            _issue(
-                "error",
-                f"Студенту нужно показать {per_attempt} вопросов, а в тесте всего {len(questions)}",
-            )
+            _issue("error", f"Студенту нужно {per_attempt} вопросов, а в тесте {len(questions)}")
         )
     seen: dict[str, str] = {}
     for q in questions:
@@ -247,7 +241,7 @@ def validate_test(test: dict) -> list[dict]:
         key = q["text"].strip().lower()
         if key:
             if key in seen:
-                issues.append(_issue("warning", "Такой же вопрос уже есть в тесте", q["id"]))
+                issues.append(_issue("warning", "Такой вопрос уже есть", q["id"]))
             else:
                 seen[key] = q["id"]
     return issues

@@ -1,4 +1,4 @@
-/* Редактор теста: вопросы, автосохранение, картинки, вставка из Word. */
+/* Редактор теста: вопросы, автосохранение, картинки, вставка из Word, «Готово». */
 (() => {
   "use strict";
 
@@ -7,17 +7,26 @@
   if (!editorEl) return;
 
   const TEST_ID = editorEl.dataset.testId;
-  const TYPES = JSON.parse($("#question-types").textContent);
   const initial = JSON.parse($("#initial-data").textContent);
   const LETTERS = "абвгдежзиклмнопрстуфхцчшщэюя";
   const MAX_IMAGE = 5 * 1024 * 1024;
 
+  const TYPE_LABEL = {
+    truefalse: "Верно или неверно",
+    short: "Ответ словом",
+    numerical: "Ответ числом",
+    matching: "Соответствие",
+  };
+  const TYPE_CHOICES = [["choice", "Выбор ответа"], ...Object.entries(TYPE_LABEL)];
+
   const ICONS = {
     up: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15V5M5.5 9.5 10 5l4.5 4.5"/></svg>',
     down: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5v10M5.5 10.5 10 15l4.5-4.5"/></svg>',
-    copy: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 4.5H5.5A1.5 1.5 0 0 0 4 6v7.5"/></svg>',
+    dots: '<svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg>',
     trash: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 9.5h6.6L14 6"/></svg>',
     x: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l8 8M14 6l-8 8"/></svg>',
+    check: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>',
+    image: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="8.5" r="1.5"/><path d="M3.5 14l4-4 3 3 2-2 4 4"/></svg>',
   };
 
   const state = {
@@ -31,13 +40,13 @@
     version: initial.version,
     status: initial.status,
     issues: initial.issues,
-    updated: initial.updated_label,
     changeId: 0,
     savedChangeId: 0,
     saving: false,
     conflict: false,
     timer: null,
-    fresh: new Set(), // только что созданные вопросы: ошибки покажем, когда человек уйдёт с вопроса
+    errorCursor: -1,
+    fresh: new Set(), // новые вопросы: ошибки покажем, когда человек уйдёт с вопроса
   };
 
   // --- утилиты ------------------------------------------------------------
@@ -55,7 +64,6 @@
       else if (key === "html") node.innerHTML = value;
       else if (key === "value") node.value = value;
       else if (key === "checked") node.checked = !!value;
-      else if (key === "text") node.textContent = value;
       else node.setAttribute(key, value === true ? "" : value);
     }
     for (const child of children.flat()) {
@@ -65,15 +73,18 @@
     return node;
   }
 
-  function letter(i) {
-    return i < LETTERS.length ? LETTERS[i] : String(i + 1);
-  }
+  const letter = (i) => (i < LETTERS.length ? LETTERS[i] : String(i + 1));
+  const isChoice = (q) => q.type === "single" || q.type === "multiple";
 
   function plural(n, one, few, many) {
     const m10 = n % 10, m100 = n % 100;
     if (m10 === 1 && m100 !== 11) return one;
     if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
     return many;
+  }
+
+  function fmtNumber(n) {
+    return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10).replace(".", ",");
   }
 
   function blankQuestion(type) {
@@ -83,6 +94,12 @@
       correct: true, answers: [""], case_sensitive: false, number: "", tolerance: "",
       pairs: [0, 1, 2].map(() => ({ left: "", right: "" })), distractors: [],
     };
+  }
+
+  // Один верный — обычный выбор, несколько — выбор нескольких. Человеку не надо об этом думать.
+  function syncChoiceType(q) {
+    if (!isChoice(q)) return;
+    q.type = q.options.filter((o) => o.correct).length > 1 ? "multiple" : "single";
   }
 
   function findQuestion(node) {
@@ -125,7 +142,7 @@
     btn.onclick = () => { hideToast(); if (action) action(); };
     toastEl.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(hideToast, actionLabel ? 8000 : 4000);
+    toastTimer = setTimeout(hideToast, actionLabel ? 8000 : 3500);
   }
   function hideToast() { toastEl.classList.remove("show"); }
 
@@ -137,23 +154,16 @@
   function hideBanner() { bannerEl.classList.remove("show"); }
 
   // --- сохранение ---------------------------------------------------------
-  const saveStatusEl = $("#save-status");
-  const saveTimeEl = $("#save-time");
-  function setSaveStatus(kind, text) {
-    const labels = {
-      saved: "Все изменения сохранены",
-      dirty: "Есть несохранённые изменения",
-      saving: "Сохраняю…",
-      error: "Не удалось сохранить. Повторю через несколько секунд",
-    };
-    saveStatusEl.dataset.state = kind;
-    saveStatusEl.textContent = text || labels[kind];
-    saveTimeEl.textContent = state.updated ? "Последнее сохранение: " + state.updated : "";
+  const saveEl = $("#save-status");
+  function setSave(kind, text) {
+    const labels = { saved: "Сохранено", saving: "Сохраняю…", error: "Нет связи, повторяю…" };
+    saveEl.dataset.state = kind;
+    saveEl.textContent = text || labels[kind];
   }
 
   function markDirty() {
     state.changeId += 1;
-    if (!state.saving) setSaveStatus("dirty");
+    setSave("saving");
     clearTimeout(state.timer);
     state.timer = setTimeout(save, 700);
   }
@@ -168,7 +178,7 @@
     if (state.changeId === state.savedChangeId) return;
     state.saving = true;
     const changeId = state.changeId;
-    setSaveStatus("saving");
+    setSave("saving");
     let retryIn = 0;
     try {
       const res = await api("PUT", `/api/tests/${TEST_ID}`, { version: state.version, ...state.test });
@@ -179,27 +189,25 @@
       if (res.status === 401) {
         showSessionExpired();
         retryIn = 5000;
-        setSaveStatus("error", "Не сохранено: нужно войти заново");
+        setSave("error", "Нужно войти заново");
         return;
       }
       if (!res.ok) {
         retryIn = 5000;
-        setSaveStatus("error", await errorText(res, "Не удалось сохранить. Повторю через несколько секунд"));
+        setSave("error", await errorText(res, "Не сохранилось, повторяю…"));
         return;
       }
       const data = await res.json();
       state.version = data.version;
       state.status = data.status;
       state.issues = data.issues;
-      state.updated = data.updated_at;
       state.savedChangeId = changeId;
       hideBanner();
       applyIssues();
-      renderSide();
-      setSaveStatus(state.changeId === changeId ? "saved" : "dirty");
+      setSave(state.changeId === changeId ? "saved" : "saving");
     } catch (_) {
       retryIn = 5000;
-      setSaveStatus("error", "Нет связи с сервером. Повторю через несколько секунд");
+      setSave("error");
     } finally {
       state.saving = false;
       if (!state.conflict) {
@@ -211,22 +219,22 @@
 
   async function flush() {
     clearTimeout(state.timer);
-    for (let i = 0; i < 20 && state.saving; i++) await new Promise((r) => setTimeout(r, 150));
+    for (let i = 0; i < 30 && state.saving; i++) await new Promise((r) => setTimeout(r, 150));
     await save();
     return state.changeId === state.savedChangeId;
   }
 
   function showSessionExpired() {
     banner([
-      "Сессия истекла. ",
-      el("a", { href: `/login?next=/tests/${TEST_ID}`, target: "_blank", rel: "noopener" }, "Войдите заново в новой вкладке"),
-      " — изменения на этой странице не пропадут и сохранятся, как только вы войдёте.",
+      "Вы вышли из системы. ",
+      el("a", { href: `/login?next=/tests/${TEST_ID}`, target: "_blank", rel: "noopener" }, "Войдите снова"),
+      " в новой вкладке — всё, что вы ввели здесь, сохранится.",
     ]);
   }
 
   function showConflict() {
     state.conflict = true;
-    setSaveStatus("error", "Не сохранено: тест изменили в другом месте");
+    setSave("error", "Не сохранено");
     const overwrite = el("button", { type: "button", class: "btn btn-small" }, "Сохранить мою версию");
     overwrite.addEventListener("click", async () => {
       const res = await api("GET", `/api/tests/${TEST_ID}`);
@@ -239,9 +247,9 @@
       save();
     });
     banner([
-      "Этот тест одновременно изменили в другой вкладке или на другом компьютере. ",
+      "Этот тест сейчас правят ещё в одном окне. ",
       el("a", { href: location.pathname }, "Обновите страницу"),
-      ", чтобы увидеть последнюю версию, или ",
+      " или ",
       overwrite,
     ]);
   }
@@ -271,7 +279,6 @@
       const value = state.test.settings[key];
       if (input.type === "checkbox") input.checked = !!value;
       else input.value = value === null || value === undefined ? "" : value;
-      if (input.tagName === "TEXTAREA") autoGrow(input);
       input.addEventListener(input.type === "checkbox" ? "change" : "input", () => {
         let v;
         if (input.type === "checkbox") v = input.checked;
@@ -282,132 +289,101 @@
         markDirty();
       });
     });
-    $("#expand-settings").addEventListener("click", () => {
-      const details = $("#settings");
-      details.open = true;
-      details.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
   }
 
   // --- карточка вопроса ---------------------------------------------------
   const listEl = $("#questions");
 
   function iconButton(role, icon, label, extra = {}) {
-    return el("button", { type: "button", class: "icon-btn" + (extra.danger ? " danger" : ""), "data-role": role,
-      "aria-label": label, title: label, html: ICONS[icon], disabled: extra.disabled });
+    return el("button", {
+      type: "button", class: "icon-btn" + (extra.danger ? " danger" : ""), "data-role": role,
+      "aria-label": label, title: label, html: ICONS[icon], disabled: extra.disabled,
+    });
   }
 
   function removeButton(role, index, label) {
-    return el("button", { type: "button", class: "icon-btn danger", "data-role": role, "data-index": index,
+    return el("button", { type: "button", class: "icon-btn remove", "data-role": role, "data-index": index,
       "aria-label": label, title: label, html: ICONS.x });
   }
 
+  function addRowButton(role, label) {
+    return el("button", { type: "button", class: "add-row", "data-role": role }, "+ " + label);
+  }
+
   function renderChoice(q) {
-    const single = q.type === "single";
-    const wrap = el("div", { class: "q-answers" });
-    wrap.append(el("div", { class: "answers-hint" },
-      single ? "Нажмите на кружок с буквой, чтобы отметить правильный ответ."
-        : "Отметьте все правильные ответы. Неверно выбранные варианты снижают балл."));
-    const group = el("div", { role: single ? "radiogroup" : "group", "aria-label": "Варианты ответа" });
-    q.options.forEach((opt, i) => {
-      group.append(el("div", { class: "opt" + (opt.correct ? " correct" : "") },
-        el("button", {
-          type: "button", class: "bubble" + (single ? "" : " square"), "data-role": "opt-correct", "data-index": i,
-          role: single ? "radio" : "checkbox", "aria-checked": opt.correct ? "true" : "false",
-          "aria-label": `Вариант ${letter(i)} правильный`, title: "Отметить правильным",
-        }, letter(i)),
-        el("input", { type: "text", "data-role": "opt-text", "data-index": i, value: opt.text,
-          placeholder: `Вариант ${letter(i)}`, "aria-label": `Текст варианта ${letter(i)}`, maxlength: 20000 }),
-        removeButton("opt-remove", i, `Удалить вариант ${letter(i)}`),
-      ));
+    const wrap = el("div", { class: "answers" });
+    q.options.forEach((o, i) => {
+      wrap.append(el("div", { class: "opt" + (o.correct ? " is-correct" : "") },
+        el("span", { class: "opt-letter", "aria-hidden": "true" }, letter(i) + ")"),
+        el("input", { type: "text", "data-role": "opt-text", "data-index": i, value: o.text, maxlength: 20000,
+          placeholder: "Вариант ответа", "aria-label": `Вариант ${letter(i)}` }),
+        el("button", { type: "button", class: "mark", "data-role": "opt-correct", "data-index": i,
+          "aria-pressed": o.correct ? "true" : "false", title: o.correct ? "Снять отметку" : "Отметить верным" },
+          el("span", { class: "mark-box", "aria-hidden": "true", html: ICONS.check }), "Верный"),
+        removeButton("opt-remove", i, `Удалить вариант ${letter(i)}`)));
     });
-    wrap.append(group, el("div", { class: "answers-footer" },
-      el("button", { type: "button", class: "add-row", "data-role": "opt-add" }, "+ Добавить вариант"),
-      el("label", { class: "check" }, el("input", { type: "checkbox", "data-role": "shuffle", checked: q.shuffle }),
-        "Перемешивать варианты"),
-    ));
+    const footer = el("div", { class: "answers-foot" }, addRowButton("opt-add", "Ещё вариант"));
+    if (q.type === "multiple") footer.append(el("span", { class: "note" }, "Несколько верных — студент выбирает все"));
+    wrap.append(footer);
     return wrap;
   }
 
   function renderTrueFalse(q) {
-    const choice = (value, label) => el("button", {
-      type: "button", class: "tf-choice", role: "radio", "data-role": "tf", "data-value": value ? "1" : "0",
-      "aria-checked": q.correct === value ? "true" : "false",
-    }, el("span", { class: "bubble", "aria-hidden": "true" }), label);
-    return el("div", { class: "q-answers" },
-      el("div", { class: "answers-hint" }, "Какое утверждение правильное?"),
-      el("div", { class: "tf", role: "radiogroup", "aria-label": "Правильный ответ" },
-        choice(true, "Верно"), choice(false, "Неверно")));
+    const seg = (value, label) => el("button", {
+      type: "button", class: "seg-btn", "data-role": "tf", "data-value": value ? "1" : "0",
+      role: "radio", "aria-checked": q.correct === value ? "true" : "false",
+    }, label);
+    return el("div", { class: "answers" },
+      el("div", { class: "inline-field" }, el("span", { class: "label" }, "Верный ответ:"),
+        el("div", { class: "seg", role: "radiogroup", "aria-label": "Верный ответ" }, seg(true, "Верно"), seg(false, "Неверно"))));
   }
 
   function renderShort(q) {
-    const wrap = el("div", { class: "q-answers" },
-      el("div", { class: "answers-hint" }, "Студент вводит ответ сам. Укажите все варианты написания, которые нужно засчитать."));
-    const list = el("div", { class: "row-list" });
+    const wrap = el("div", { class: "answers" });
     q.answers.forEach((a, i) => {
-      list.append(el("div", { class: "row" },
+      wrap.append(el("div", { class: "row" },
         el("input", { type: "text", "data-role": "ans-text", "data-index": i, value: a, maxlength: 1000,
-          placeholder: i === 0 ? "Правильный ответ" : "Ещё вариант написания", "aria-label": `Правильный ответ ${i + 1}` }),
-        removeButton("ans-remove", i, "Удалить вариант ответа")));
+          placeholder: i === 0 ? "Правильный ответ" : "Другое написание", "aria-label": `Правильный ответ ${i + 1}` }),
+        removeButton("ans-remove", i, "Удалить")));
     });
-    wrap.append(list, el("div", { class: "answers-footer" },
-      el("button", { type: "button", class: "add-row", "data-role": "ans-add" }, "+ Ещё вариант написания"),
-      el("label", { class: "check" }, el("input", { type: "checkbox", "data-role": "case", checked: q.case_sensitive }),
-        "Учитывать заглавные и строчные буквы")));
+    wrap.append(el("div", { class: "answers-foot" }, addRowButton("ans-add", "Другое написание ответа")));
     return wrap;
   }
 
   function renderNumerical(q) {
-    return el("div", { class: "q-answers" },
-      el("div", { class: "numeric" },
-        el("label", { class: "field" }, el("span", {}, "Правильный ответ"),
-          el("input", { type: "text", inputmode: "decimal", "data-role": "number", value: q.number, placeholder: "Например, 9,8" })),
-        el("label", { class: "field" }, el("span", {}, "Допустимая погрешность ±"),
-          el("input", { type: "text", inputmode: "decimal", "data-role": "tolerance", value: q.tolerance, placeholder: "0" }))),
-      el("div", { class: "hint" }, "Например, ответ 9,8 с погрешностью 0,1 засчитает всё от 9,7 до 9,9."));
+    return el("div", { class: "answers" },
+      el("div", { class: "inline-field" },
+        el("label", { class: "inline" }, el("span", { class: "label" }, "Ответ"),
+          el("input", { type: "text", inputmode: "decimal", "data-role": "number", value: q.number, placeholder: "9,8", class: "num-input" })),
+        el("label", { class: "inline" }, el("span", { class: "label" }, "±"),
+          el("input", { type: "text", inputmode: "decimal", "data-role": "tolerance", value: q.tolerance, placeholder: "0", class: "num-input",
+            title: "Допустимая погрешность" }))));
   }
 
   function renderMatching(q) {
-    const wrap = el("div", { class: "q-answers" },
-      el("div", { class: "answers-hint" }, "Студент сопоставляет каждому пункту слева ответ справа. Ответы будут перемешаны."),
-      el("div", { class: "pair-head", "aria-hidden": "true" }, el("span", {}, "Пункт"), el("span"), el("span", {}, "Его ответ"), el("span")));
+    const wrap = el("div", { class: "answers" },
+      el("div", { class: "pair pair-head", "aria-hidden": "true" }, el("span", {}, "Слева"), el("span", { class: "dash" }), el("span", {}, "Справа (ответ)"), el("span")));
     q.pairs.forEach((p, i) => {
       wrap.append(el("div", { class: "pair" },
         el("input", { type: "text", "data-role": "pair-left", "data-index": i, value: p.left, maxlength: 20000,
-          placeholder: `Пункт ${i + 1}`, "aria-label": `Пункт ${i + 1}` }),
+          placeholder: "Например, «Сила»", "aria-label": `Пара ${i + 1}, слева` }),
         el("span", { class: "dash", "aria-hidden": "true" }, "—"),
         el("input", { type: "text", "data-role": "pair-right", "data-index": i, value: p.right, maxlength: 20000,
-          placeholder: "Ответ", "aria-label": `Ответ к пункту ${i + 1}` }),
+          placeholder: "«Ньютон»", "aria-label": `Пара ${i + 1}, ответ` }),
         removeButton("pair-remove", i, `Удалить пару ${i + 1}`)));
     });
-    wrap.append(el("div", { class: "answers-footer" },
-      el("button", { type: "button", class: "add-row", "data-role": "pair-add" }, "+ Добавить пару")));
-    const extra = el("div", { class: "sub-block" },
-      el("div", { class: "answers-hint" }, "Лишние ответы — необязательно. Это варианты справа, у которых нет пары: так сложнее угадать."));
-    const list = el("div", { class: "row-list" });
     q.distractors.forEach((d, i) => {
-      list.append(el("div", { class: "row" },
+      wrap.append(el("div", { class: "pair" },
+        el("span", { class: "extra-label" }, "Лишний ответ"),
+        el("span", { class: "dash", "aria-hidden": "true" }),
         el("input", { type: "text", "data-role": "distr-text", "data-index": i, value: d, maxlength: 20000,
-          placeholder: "Лишний ответ", "aria-label": `Лишний ответ ${i + 1}` }),
+          placeholder: "Ответ без пары", "aria-label": `Лишний ответ ${i + 1}` }),
         removeButton("distr-remove", i, "Удалить лишний ответ")));
     });
-    extra.append(list, el("button", { type: "button", class: "add-row", "data-role": "distr-add" }, "+ Лишний ответ"));
-    wrap.append(extra);
+    wrap.append(el("div", { class: "answers-foot" }, addRowButton("pair-add", "Ещё пара"),
+      el("button", { type: "button", class: "add-row add-row-muted", "data-role": "distr-add",
+        title: "Ответ справа, к которому нет пары — так сложнее угадать" }, "+ Лишний ответ")));
     return wrap;
-  }
-
-  function renderImage(q) {
-    const box = el("div", { class: "q-image" });
-    if (q.image) {
-      box.append(
-        el("img", { src: `/images/${q.image}`, alt: "Картинка к вопросу" }),
-        el("button", { type: "button", class: "add-row", "data-role": "image-remove" }, "Убрать картинку"));
-    } else {
-      const input = el("input", { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", "data-role": "image-file" });
-      box.append(el("label", { class: "file-label" }, input, "+ Добавить картинку"),
-        el("span", { class: "hint" }, "или вставьте её в текст вопроса через Ctrl+V"));
-    }
-    return box;
   }
 
   function renderAnswers(q) {
@@ -422,44 +398,74 @@
     }
   }
 
+  function renderImage(q) {
+    if (q.image) {
+      return el("div", { class: "q-image" },
+        el("img", { src: `/images/${q.image}`, alt: "Картинка к вопросу" }),
+        el("button", { type: "button", class: "add-row add-row-muted", "data-role": "image-remove" }, "Убрать картинку"));
+    }
+    return null;
+  }
+
+  function moreMenu(q) {
+    const typeSelect = el("select", { "data-role": "type" });
+    for (const [key, label] of TYPE_CHOICES) {
+      const option = el("option", { value: key }, label);
+      if (key === q.type || (key === "choice" && isChoice(q))) option.selected = true;
+      typeSelect.append(option);
+    }
+    return el("details", { class: "dropdown more" },
+      el("summary", { class: "icon-btn", "aria-label": "Ещё действия", title: "Ещё", html: ICONS.dots }),
+      el("div", { class: "menu menu-right" },
+        el("button", { type: "button", class: "menu-item", "data-role": "copy" }, el("b", {}, "Сделать копию")),
+        el("label", { class: "menu-field" }, el("span", {}, "Тип вопроса"), typeSelect),
+        el("label", { class: "menu-field" }, el("span", {}, "Баллы за вопрос"),
+          el("input", { type: "number", min: "0.5", max: "100", step: "0.5", "data-role": "points", value: q.points })),
+        isChoice(q) ? el("label", { class: "check menu-check" },
+          el("input", { type: "checkbox", "data-role": "shuffle", checked: q.shuffle }), "Перемешивать варианты") : null,
+        q.type === "short" ? el("label", { class: "check menu-check" },
+          el("input", { type: "checkbox", "data-role": "case", checked: q.case_sensitive }), "Учитывать заглавные буквы") : null));
+  }
+
   function renderQuestion(q, index) {
     const total = state.test.questions.length;
-    const select = el("select", { "data-role": "type", "aria-label": "Тип вопроса" });
-    for (const [key, label] of Object.entries(TYPES)) {
-      const option = el("option", { value: key }, label);
-      if (key === q.type) option.selected = true;
-      select.append(option);
-    }
-    const text = el("textarea", { class: "q-text", "data-role": "text", rows: 3, maxlength: 20000,
+    const text = el("textarea", { class: "q-text", "data-role": "text", rows: 2, maxlength: 20000,
       placeholder: "Текст вопроса", "aria-label": `Текст вопроса ${index + 1}` });
     text.value = q.text;
-
+    const chips = [];
+    if (!isChoice(q)) chips.push(el("span", { class: "chip" }, TYPE_LABEL[q.type]));
+    if (Number(q.points) !== 1) {
+      const p = Number(q.points) || 0;
+      chips.push(el("span", { class: "chip" }, `${fmtNumber(p)} ${plural(Math.ceil(p), "балл", "балла", "баллов")}`));
+    }
+    const imageInput = el("input", { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp",
+      "data-role": "image-file", class: "visually-hidden", tabindex: "-1" });
     const card = el("li", { class: "q", id: `q-${q.id}`, dataset: { id: q.id } },
-      el("div", { class: "q-margin" }, el("span", { class: "q-num", "aria-hidden": "true" }, String(index + 1))),
-      el("div", { class: "q-body" },
-        el("h3", { class: "visually-hidden" }, `Вопрос ${index + 1}`),
-        el("div", { class: "q-top" },
-          select,
-          el("label", { class: "q-points" }, "Баллов",
-            el("input", { type: "number", min: "0.5", max: "100", step: "0.5", "data-role": "points", value: q.points,
-              "aria-label": "Баллов за вопрос" })),
-          el("div", { class: "q-actions" },
-            iconButton("move-up", "up", "Переместить выше", { disabled: index === 0 }),
-            iconButton("move-down", "down", "Переместить ниже", { disabled: index === total - 1 }),
-            iconButton("copy", "copy", "Сделать копию вопроса"),
-            iconButton("delete", "trash", "Удалить вопрос", { danger: true }))),
-        text,
-        renderImage(q),
-        renderAnswers(q),
-        el("ul", { class: "issues" })));
+      el("div", { class: "q-head" },
+        el("h3", { class: "q-title" }, `Вопрос ${index + 1}`),
+        chips,
+        el("div", { class: "q-tools" },
+          q.image ? null : el("button", { type: "button", class: "icon-btn", "data-role": "image-pick",
+            "aria-label": "Добавить картинку", title: "Добавить картинку", html: ICONS.image }),
+          iconButton("move-up", "up", "Выше", { disabled: index === 0 }),
+          iconButton("move-down", "down", "Ниже", { disabled: index === total - 1 }),
+          moreMenu(q),
+          iconButton("delete", "trash", "Удалить вопрос", { danger: true }))),
+      text,
+      imageInput,
+      renderImage(q),
+      renderAnswers(q),
+      el("ul", { class: "issues" }));
     requestAnimationFrame(() => autoGrow(text));
     return card;
   }
 
   function renderAll() {
     listEl.replaceChildren(...state.test.questions.map((q, i) => renderQuestion(q, i)));
+    const empty = state.test.questions.length === 0;
+    $("#add-bar").classList.toggle("is-empty", empty);
+    $("#finish").hidden = empty;
     applyIssues();
-    renderSide();
   }
 
   function rerender(q, focusSelector) {
@@ -472,7 +478,7 @@
       const target = card.querySelector(focusSelector);
       if (target) {
         target.focus();
-        if (target.setSelectionRange && typeof target.value === "string") {
+        if (target.setSelectionRange && typeof target.value === "string" && target.type === "text") {
           const end = target.value.length;
           target.setSelectionRange(end, end);
         }
@@ -481,8 +487,7 @@
     return card;
   }
 
-  function flashCard(id) {
-    const card = document.getElementById(`q-${id}`);
+  function flashCard(card) {
     if (!card) return;
     card.scrollIntoView({ behavior: "smooth", block: "center" });
     card.classList.remove("flash");
@@ -490,7 +495,7 @@
     card.classList.add("flash");
   }
 
-  // --- ошибки и боковая панель -------------------------------------------
+  // --- ошибки и верхняя панель -------------------------------------------
   function visibleIssues() {
     return state.issues.filter((i) => !i.question || !state.fresh.has(i.question));
   }
@@ -502,92 +507,85 @@
       if (issue.question) {
         if (!byQuestion.has(issue.question)) byQuestion.set(issue.question, []);
         byQuestion.get(issue.question).push(issue);
-      } else if (!issue.message.startsWith("В тесте нет")) {
+      } else if (issue.message !== "Добавьте вопросы") {
         testLevel.push(issue);
       }
     }
     for (const card of listEl.children) {
       const issues = byQuestion.get(card.dataset.id) || [];
       card.classList.toggle("has-error", issues.some((i) => i.level === "error"));
-      card.querySelector(".issues").replaceChildren(
-        ...issues.map((i) => el("li", { class: i.level }, i.message)));
+      card.querySelector(".issues").replaceChildren(...issues.map((i) => el("li", { class: i.level }, i.message)));
     }
     $("#test-issues").replaceChildren(...testLevel.map((i) => el("li", { class: i.level }, i.message)));
+    $(".test-head").classList.toggle("has-error", testLevel.some((i) => i.level === "error"));
+    renderBar();
   }
 
-  function renderSide() {
-    const qs = state.test.questions;
-    $("#stat-questions").textContent = qs.length;
-    const points = qs.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
-    $("#stat-points").textContent = Number.isInteger(points) ? points : points.toFixed(1).replace(".", ",");
-
-    const indexOf = new Map(qs.map((q, i) => [q.id, i]));
-    const issues = visibleIssues();
-    const errors = issues.filter((i) => i.level === "error");
-    const warnings = issues.filter((i) => i.level === "warning");
-    const box = $("#problems");
-    if (!qs.length) {
-      box.replaceChildren(el("p", { class: "hint" }, "Добавьте первый вопрос кнопками под формой."));
-    } else if (!issues.length) {
-      box.replaceChildren(el("p", { class: "problems-ok" }, "Ошибок нет"));
-    } else {
-      const item = (i) => {
-        const btn = el("button", { type: "button" },
-          i.question ? el("span", { class: "q-ref" }, `№${(indexOf.get(i.question) ?? 0) + 1}`) : null, i.message);
-        btn.addEventListener("click", () => {
-          if (i.question) flashCard(i.question);
-          else $(".test-head").scrollIntoView({ behavior: "smooth" });
-        });
-        return el("li", {}, btn);
-      };
-      const nodes = [];
-      if (errors.length) {
-        nodes.push(el("h3", {}, `${errors.length} ${plural(errors.length, "ошибка", "ошибки", "ошибок")}`),
-          el("ul", {}, errors.map(item)));
-      }
-      if (warnings.length) {
-        nodes.push(el("h3", { class: "warn-title" }, `${warnings.length} ${plural(warnings.length, "замечание", "замечания", "замечаний")}`),
-          el("ul", {}, warnings.map(item)));
-      }
-      box.replaceChildren(el("div", { class: "problems" }, nodes));
-    }
-
-    const readyBox = $("#ready-box");
-    const hasErrors = state.issues.some((i) => i.level === "error");
-    if (state.status === "ready") {
-      const back = el("button", { type: "button", class: "btn" }, "Вернуть в черновики");
-      back.addEventListener("click", () => setReady(false));
-      readyBox.replaceChildren(
-        el("div", { class: "ready-note" }, "Тест отмечен готовым — администратор загрузит его в Moodle. Править его по-прежнему можно."),
-        back);
-    } else {
-      const ready = el("button", { type: "button", class: "btn btn-primary", disabled: hasErrors || !qs.length }, "Отметить тест готовым");
-      ready.addEventListener("click", () => setReady(true));
-      let hint = "Когда закончите, отметьте тест готовым, чтобы администратор это увидел.";
-      if (!qs.length) hint = "Добавьте хотя бы один вопрос.";
-      else if (hasErrors) hint = "Сначала исправьте ошибки — список выше.";
-      readyBox.replaceChildren(ready, el("p", { class: "hint" }, hint));
-    }
+  function errorTargets() {
+    const targets = [];
+    if ($(".test-head").classList.contains("has-error")) targets.push($(".test-head"));
+    targets.push(...listEl.querySelectorAll(".q.has-error"));
+    return targets;
   }
 
-  async function setReady(ready) {
-    if (!(await flush())) {
-      toast("Не удалось сохранить изменения — попробуйте ещё раз");
+  function goToNextError() {
+    const targets = errorTargets();
+    if (!targets.length) return false;
+    state.errorCursor = (state.errorCursor + 1) % targets.length;
+    const target = targets[state.errorCursor];
+    flashCard(target);
+    const field = target.querySelector(".q-text, .title-input");
+    if (field && target.classList.contains("q") && !field.value) field.focus({ preventScroll: true });
+    return true;
+  }
+
+  function renderBar() {
+    const n = errorTargets().length;
+    const errorsBtn = $("#bar-errors");
+    errorsBtn.hidden = n === 0;
+    errorsBtn.textContent = n ? `Исправить: ${n}` : "";
+    errorsBtn.title = "Показать, что нужно исправить";
+    const ready = state.status === "ready";
+    $("#bar-ready").hidden = !ready;
+    $("#done-top").hidden = ready;
+    const bottom = $("#done-bottom");
+    bottom.textContent = ready ? "✓ Тест готов" : "Готово — тест заполнен";
+    bottom.classList.toggle("btn-done", !ready);
+  }
+
+  // --- «Готово» -----------------------------------------------------------
+  async function finish() {
+    if (!state.test.questions.length) {
+      toast("Сначала добавьте вопросы");
       return;
     }
-    const res = await api("POST", `/api/tests/${TEST_ID}/status`, { ready });
+    state.fresh.clear();
+    applyIssues();
+    if (!(await flush())) {
+      toast("Не получилось сохранить. Проверьте интернет и нажмите ещё раз");
+      return;
+    }
+    if (state.issues.some((i) => i.level === "error")) {
+      applyIssues();
+      state.errorCursor = -1;
+      goToNextError();
+      toast("Исправьте то, что отмечено красным");
+      return;
+    }
+    const res = await api("POST", `/api/tests/${TEST_ID}/status`, { ready: true });
     if (!res.ok) {
-      toast(await errorText(res, "Не получилось изменить состояние теста"));
+      toast(await errorText(res, "Не получилось. Попробуйте ещё раз"));
       return;
     }
     const data = await res.json();
     state.status = data.status;
     state.version = data.version;
-    state.updated = data.updated_at;
-    setSaveStatus("saved");
-    renderSide();
-    toast(ready ? "Тест отмечен готовым" : "Тест возвращён в черновики");
+    renderBar();
+    $("#done-dialog").showModal();
   }
+  $("#done-top").addEventListener("click", finish);
+  $("#done-bottom").addEventListener("click", finish);
+  $("#bar-errors").addEventListener("click", goToNextError);
 
   // --- действия с вопросами ----------------------------------------------
   function addQuestions(questions, { fresh = true, focus = true } = {}) {
@@ -599,11 +597,9 @@
     markDirty();
     const first = questions[0];
     if (first) {
-      flashCard(first.id);
-      if (focus) {
-        const t = document.querySelector(`#q-${first.id} .q-text`);
-        if (t) t.focus({ preventScroll: true });
-      }
+      const card = document.getElementById(`q-${first.id}`);
+      flashCard(card);
+      if (focus && card) card.querySelector(".q-text").focus({ preventScroll: true });
     }
   }
 
@@ -615,9 +611,9 @@
     const id = qs[target].id;
     renderAll();
     markDirty();
-    const btn = document.querySelector(`#q-${id} [data-role="${delta < 0 ? "move-up" : "move-down"}"]`);
     const card = document.getElementById(`q-${id}`);
     if (card) card.scrollIntoView({ block: "nearest" });
+    const btn = card && card.querySelector(`[data-role="${delta < 0 ? "move-up" : "move-down"}"]`);
     if (btn && !btn.disabled) btn.focus();
   }
 
@@ -630,7 +626,7 @@
       state.test.questions.splice(Math.min(index, state.test.questions.length), 0, removed);
       renderAll();
       markDirty();
-      flashCard(removed.id);
+      flashCard(document.getElementById(`q-${removed.id}`));
     });
   }
 
@@ -640,21 +636,20 @@
     state.test.questions.splice(index + 1, 0, copy);
     renderAll();
     markDirty();
-    flashCard(copy.id);
+    flashCard(document.getElementById(`q-${copy.id}`));
+    toast("Копия добавлена ниже");
   }
 
   async function uploadImage(q, file) {
     if (!file || !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
-      toast("Подходят картинки PNG, JPEG, GIF или WebP");
+      toast("Нужна картинка: PNG, JPG или GIF");
       return;
     }
     if (file.size > MAX_IMAGE) {
-      toast("Картинка больше 5 МБ — уменьшите её и попробуйте снова");
+      toast("Картинка слишком большая (больше 5 МБ)");
       return;
     }
-    const card = document.getElementById(`q-${q.id}`);
-    const box = card && card.querySelector(".q-image");
-    if (box) box.replaceChildren(el("span", { class: "uploading" }, "Загружаю картинку…"));
+    toast("Загружаю картинку…");
     const form = new FormData();
     form.append("file", file, file.name || "image.png");
     try {
@@ -663,20 +658,19 @@
       });
       if (!res.ok) {
         toast(await errorText(res, "Не удалось загрузить картинку"));
-        rerender(q);
         return;
       }
       const data = await res.json();
       q.image = data.id;
       rerender(q);
       markDirty();
+      hideToast();
     } catch (_) {
-      toast("Нет связи с сервером — картинка не загружена");
-      rerender(q);
+      toast("Нет связи — картинка не загрузилась");
     }
   }
 
-  // --- обработка событий в списке вопросов --------------------------------
+  // --- события в списке вопросов -----------------------------------------
   listEl.addEventListener("input", (e) => {
     const t = e.target;
     const found = findQuestion(t);
@@ -704,20 +698,19 @@
     if (!found) return;
     const { q } = found;
     switch (t.dataset.role) {
-      case "type": {
-        const old = q.type;
-        q.type = t.value;
-        // Переход «один ответ» ↔ «несколько»: лишние отметки снимаем, чтобы не было ошибки.
-        if (q.type === "single" && old === "multiple") {
-          let seen = false;
-          for (const o of q.options) { if (o.correct && !seen) seen = true; else o.correct = false; }
+      case "type":
+        if (t.value === "choice") {
+          q.type = "single";
+          syncChoiceType(q);
+        } else {
+          q.type = t.value;
         }
-        rerender(q, '[data-role="type"]');
+        rerender(q);
         break;
-      }
+      case "points": rerender(q); break;
       case "shuffle": q.shuffle = t.checked; break;
       case "case": q.case_sensitive = t.checked; break;
-      case "image-file": uploadImage(q, t.files[0]); return;
+      case "image-file": uploadImage(q, t.files[0]); t.value = ""; return;
       default: return;
     }
     markDirty();
@@ -728,17 +721,18 @@
     if (!t || t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA") return;
     const found = findQuestion(t);
     if (!found) return;
-    const { q, index } = found;
+    const { q, index, card } = found;
     const i = Number(t.dataset.index);
     switch (t.dataset.role) {
       case "move-up": moveQuestion(index, -1); return;
       case "move-down": moveQuestion(index, 1); return;
       case "copy": copyQuestion(index); return;
       case "delete": deleteQuestion(index); return;
-      case "image-remove": q.image = null; rerender(q, ".file-label"); break;
+      case "image-pick": card.querySelector('[data-role="image-file"]').click(); return;
+      case "image-remove": q.image = null; rerender(q); break;
       case "opt-correct":
-        if (q.type === "single") q.options.forEach((o, k) => { o.correct = k === i; });
-        else q.options[i].correct = !q.options[i].correct;
+        q.options[i].correct = !q.options[i].correct;
+        syncChoiceType(q);
         rerender(q, `[data-role="opt-correct"][data-index="${i}"]`);
         break;
       case "opt-add":
@@ -747,6 +741,7 @@
         break;
       case "opt-remove":
         q.options.splice(i, 1);
+        syncChoiceType(q);
         rerender(q, `[data-role="opt-text"][data-index="${Math.max(0, i - 1)}"]`);
         break;
       case "tf":
@@ -776,7 +771,7 @@
         break;
       case "distr-remove":
         q.distractors.splice(i, 1);
-        rerender(q, `[data-role="distr-text"][data-index="${Math.max(0, i - 1)}"]`);
+        rerender(q, '[data-role="distr-add"]');
         break;
       default: return;
     }
@@ -804,12 +799,13 @@
     } else if (e.key === "Backspace" && t.value === "" && key !== "pairs" && q[key].length > 1) {
       e.preventDefault();
       q[key].splice(i, 1);
+      syncChoiceType(q);
       rerender(q, `[data-role="${t.dataset.role}"][data-index="${Math.max(0, i - 1)}"]`);
       markDirty();
     }
   });
 
-  // Вставка картинки из буфера (скриншот) прямо в текст вопроса.
+  // Картинка из буфера (скриншот) прямо в текст вопроса.
   listEl.addEventListener("paste", (e) => {
     const t = e.target;
     if (t.dataset.role !== "text" || !e.clipboardData) return;
@@ -839,23 +835,43 @@
     const card = e.target.closest(".q");
     if (!card || !state.fresh.has(card.dataset.id)) return;
     if (e.relatedTarget && card.contains(e.relatedTarget)) return;
+    const id = card.dataset.id;
     setTimeout(() => {
-      if (card.isConnected && card.contains(document.activeElement)) return;
-      state.fresh.delete(card.dataset.id);
+      // Карточку могли перерисовать (Enter, «Верный») — смотрим на актуальную.
+      const current = document.getElementById(`q-${id}`);
+      if (current && current.contains(document.activeElement)) return;
+      state.fresh.delete(id);
       applyIssues();
-      renderSide();
     }, 0);
+  });
+
+  // Выпадающие меню закрываются кликом мимо и клавишей Esc.
+  document.addEventListener("click", (e) => {
+    document.querySelectorAll("details.dropdown[open]").forEach((d) => {
+      if (!d.contains(e.target)) d.open = false;
+    });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    document.querySelectorAll("details.dropdown[open]").forEach((d) => {
+      d.open = false;
+      d.querySelector("summary").focus();
+    });
   });
 
   // --- кнопки «добавить» ---------------------------------------------------
   document.querySelectorAll("[data-add]").forEach((btn) => {
-    btn.addEventListener("click", () => addQuestions([blankQuestion(btn.dataset.add)]));
+    btn.addEventListener("click", () => {
+      const menu = btn.closest("details");
+      if (menu) menu.open = false;
+      addQuestions([blankQuestion(btn.dataset.add)]);
+    });
   });
 
   // --- удаление теста ------------------------------------------------------
   $("#delete-test").addEventListener("click", async () => {
     const name = state.test.discipline || "без названия";
-    if (!confirm(`Удалить тест «${name}»? Администратор сможет его восстановить.`)) return;
+    if (!confirm(`Удалить тест «${name}»?`)) return;
     await flush();
     const res = await api("DELETE", `/api/tests/${TEST_ID}`);
     if (res.ok) {
@@ -866,46 +882,68 @@
     }
   });
 
-  // --- вставка текстом -----------------------------------------------------
+  document.querySelectorAll("dialog [data-close]").forEach((b) =>
+    b.addEventListener("click", () => b.closest("dialog").close()));
+
+  // --- вставка из Word ----------------------------------------------------
   const dialog = $("#paste-dialog");
   const pasteText = $("#paste-text");
   const pastePreview = $("#paste-preview");
-  const pasteExample = pastePreview.innerHTML;
   const pasteAdd = $("#paste-add");
   let parsed = null;
   let parseTimer = null;
   let parseSeq = 0;
 
+  function resetPaste() {
+    pasteText.value = "";
+    parsed = null;
+    pastePreview.replaceChildren(el("p", { class: "paste-empty" }, "Здесь появятся найденные вопросы"));
+    updatePasteButton();
+  }
+
   $("#open-paste").addEventListener("click", () => {
+    if (!pasteText.value) resetPaste();
     dialog.showModal();
     pasteText.focus();
   });
-  dialog.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => dialog.close()));
 
   pasteText.addEventListener("input", () => {
     clearTimeout(parseTimer);
-    parseTimer = setTimeout(parsePaste, 400);
+    parseTimer = setTimeout(parsePaste, 350);
+  });
+
+  // Вставка из Word: верные ответы, выделенные жирным/цветом/подчёркиванием, помечаем «*».
+  pasteText.addEventListener("paste", (e) => {
+    const html = e.clipboardData && e.clipboardData.getData("text/html");
+    if (!html || !window.WordPaste) return;
+    const text = window.WordPaste.htmlToMarkedText(html);
+    if (!text.trim()) return;
+    e.preventDefault();
+    const start = pasteText.selectionStart;
+    const end = pasteText.selectionEnd;
+    pasteText.value = pasteText.value.slice(0, start) + text + pasteText.value.slice(end);
+    pasteText.selectionStart = pasteText.selectionEnd = start + text.length;
+    clearTimeout(parseTimer);
+    parsePaste();
   });
 
   async function parsePaste() {
     const text = pasteText.value;
     const seq = ++parseSeq;
     if (!text.trim()) {
-      parsed = null;
-      pastePreview.innerHTML = pasteExample;
-      updatePasteButton();
+      resetPaste();
       return;
     }
     let data;
     try {
       const res = await api("POST", "/api/parse", { text });
       if (!res.ok) {
-        pastePreview.replaceChildren(el("p", { class: "alert alert-error" }, await errorText(res, "Не удалось разобрать текст")));
+        pastePreview.replaceChildren(el("p", { class: "issues-inline error" }, await errorText(res, "Не удалось разобрать текст")));
         return;
       }
       data = await res.json();
     } catch (_) {
-      pastePreview.replaceChildren(el("p", { class: "alert alert-error" }, "Нет связи с сервером"));
+      pastePreview.replaceChildren(el("p", { class: "issues-inline error" }, "Нет связи с сервером"));
       return;
     }
     if (seq !== parseSeq) return;
@@ -917,8 +955,8 @@
   function renderPastePreview() {
     const qs = parsed.questions;
     if (!qs.length) {
-      pastePreview.replaceChildren(el("p", { class: "hint" },
-        "Вопросы не найдены. Пронумеруйте вопросы (1., 2., …) или разделите их пустой строкой."));
+      pastePreview.replaceChildren(el("p", { class: "paste-empty" },
+        "Вопросы не найдены. Пронумеруйте их (1., 2., …) или разделите пустой строкой."));
       return;
     }
     const warn = new Map();
@@ -926,12 +964,12 @@
       if (!warn.has(w.index)) warn.set(w.index, []);
       warn.get(w.index).push(w.message);
     }
+    const noAnswer = qs.filter((q, i) => (warn.get(i) || []).includes("Нет верного ответа")).length;
     const items = qs.map((q, idx) => {
-      const li = el("li", {}, el("div", {}, q.text || "(без текста)"),
-        el("div", { class: "hint" }, TYPES[q.type]));
-      if (q.type === "single" || q.type === "multiple") {
+      const li = el("li", {}, el("div", { class: "pq-text" }, q.text || "(без текста)"));
+      if (isChoice(q)) {
         li.append(el("ul", { class: "opts" }, q.options.map((o, k) =>
-          el("li", { class: o.correct ? "ok" : "" }, `${letter(k)}) ${o.text}${o.correct ? "  ✓" : ""}`))));
+          el("li", { class: o.correct ? "ok" : "" }, `${letter(k)}) ${o.text}`, o.correct ? el("span", { class: "tick" }, " ✓") : null))));
       } else if (q.type === "short") {
         li.append(el("ul", { class: "opts" }, el("li", { class: "ok" }, "Ответ: " + q.answers.join("; "))));
       } else if (q.type === "numerical") {
@@ -940,12 +978,10 @@
       for (const m of warn.get(idx) || []) li.append(el("div", { class: "warn" }, m));
       return li;
     });
-    const count = qs.length;
-    const warned = warn.size;
-    pastePreview.replaceChildren(
-      el("p", {}, el("strong", {}, `Найдено ${count} ${plural(count, "вопрос", "вопроса", "вопросов")}`),
-        warned ? ` — у ${warned} ${plural(warned, "есть замечание", "есть замечания", "есть замечания")}, их можно поправить после добавления` : ""),
-      el("ol", {}, items));
+    const head = el("p", { class: "paste-count" },
+      el("strong", {}, `Найдено ${qs.length} ${plural(qs.length, "вопрос", "вопроса", "вопросов")}`));
+    if (noAnswer) head.append(el("span", { class: "warn" }, ` · без верного ответа: ${noAnswer} — отметите потом`));
+    pastePreview.replaceChildren(head, el("ol", {}, items));
   }
 
   function updatePasteButton() {
@@ -960,14 +996,12 @@
     dialog.close();
     addQuestions(qs, { fresh: false, focus: false });
     toast(`Добавлено ${qs.length} ${plural(qs.length, "вопрос", "вопроса", "вопросов")}`);
-    pasteText.value = "";
-    parsed = null;
-    pastePreview.innerHTML = pasteExample;
-    updatePasteButton();
+    resetPaste();
   });
 
   // --- старт ---------------------------------------------------------------
   initHead();
   renderAll();
-  setSaveStatus("saved");
+  setSave("saved");
+  if (!state.test.discipline) $(".title-input").focus();
 })();

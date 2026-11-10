@@ -44,10 +44,13 @@ def _strip_mark(text: str) -> tuple[str, bool]:
 
 
 class _Draft:
-    def __init__(self, text: str = ""):
+    def __init__(self, text: str = "", plain: bool = False):
+        # Строки текста хранятся как есть (с возможной «*»): если окажется, что это
+        # варианты без букв, отметка верного ответа понадобится.
         self.text_lines = [text] if text else []
         self.options: list[dict] = []  # {"label", "text", "correct"}
         self.answer: str | None = None
+        self.plain = plain  # вопрос без номера: строки после текста — варианты
 
     def add_option(self, text: str, correct: bool, label: str | None = None):
         text, marked = _strip_mark(text.strip())
@@ -56,6 +59,11 @@ class _Draft:
     @property
     def empty(self) -> bool:
         return not self.text_lines and not self.options and self.answer is None
+
+
+def _is_answer_part(line: str) -> bool:
+    return bool(ANSWER_LINE.match(line) or OPT_LETTER.match(line) or OPT_BULLET_OK.match(line)
+                or OPT_BULLET.match(line))
 
 
 def _parse_line_into(draft: _Draft, line: str, plain_options: bool) -> None:
@@ -115,12 +123,19 @@ def _apply_answer(draft: _Draft) -> str | None:
             for other in draft.options:
                 other["correct"] = other is o
             return None
-    return f"Не удалось понять строку «Ответ: {draft.answer}»"
+    return f"Не понял строку «Ответ: {draft.answer}»"
 
 
 def _to_question(draft: _Draft) -> tuple[dict, list[str]]:
     warnings: list[str] = []
-    text = "\n".join(draft.text_lines).strip()
+    lines = draft.text_lines
+    # «1. Вопрос» и дальше варианты без букв (каждый с новой строки): первая строка — вопрос.
+    if not draft.options and len(lines) >= 3:
+        for raw in lines[1:]:
+            draft.add_option(raw, False)
+        lines = lines[:1]
+    # Если в Word вопрос был выделен жирным, при вставке он тоже получил «*» — для вопроса это ничего не значит.
+    text = "\n".join(_strip_mark(line)[0] for line in lines).strip()
     if draft.options:
         problem = _apply_answer(draft)
         if problem:
@@ -128,7 +143,7 @@ def _to_question(draft: _Draft) -> tuple[dict, list[str]]:
         n_correct = sum(1 for o in draft.options if o["correct"])
         qtype = "multiple" if n_correct > 1 else "single"
         if n_correct == 0:
-            warnings.append("Не отмечен правильный ответ")
+            warnings.append("Нет верного ответа")
         q = normalize_question({
             "type": qtype,
             "text": text,
@@ -157,17 +172,27 @@ def parse_text(raw: str) -> dict:
 
     if numbered:
         current: _Draft | None = None
+        after_blank = False
         for line in lines:
             if not line.strip():
+                after_blank = True
                 continue
             m = Q_HEADER.match(line)
             if m:
                 current = _Draft(m.group(2).strip())
                 drafts.append(current)
+                after_blank = False
                 continue
             if current is None:
                 continue  # текст до первого вопроса (заголовок документа и т. п.)
-            _parse_line_into(current, line, plain_options=False)
+            # После пустой строки за вариантами — новый вопрос, у которого просто нет номера.
+            if after_blank and current.options and not _is_answer_part(line):
+                current = _Draft(line.strip(), plain=True)
+                drafts.append(current)
+                after_blank = False
+                continue
+            after_blank = False
+            _parse_line_into(current, line, plain_options=current.plain)
     else:
         current = _Draft()
         for line in lines + [""]:
