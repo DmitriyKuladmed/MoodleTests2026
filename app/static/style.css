@@ -340,16 +340,17 @@ dialog {
   max-height: calc(100vh - 40px); color: var(--ink); background: var(--sheet);
 }
 dialog::backdrop { background: rgba(28, 43, 69, .5); }
-.dialog-inner { padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; max-height: calc(100vh - 40px); }
+.dialog-inner { padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; max-height: calc(100vh - 40px); overflow-y: auto; }
+.dialog-inner > * { flex-shrink: 0; }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .dialog-foot { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .dialog-foot.center { justify-content: center; }
 
 .paste-steps { margin: 0; padding-left: 22px; color: var(--ink); }
 .paste-steps li { margin-bottom: 4px; }
-.paste-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 0; flex: 1; }
-.paste-cols textarea { min-height: 340px; height: 100%; font-size: 0.95rem; }
-.paste-preview { overflow: auto; max-height: 380px; border: 1px solid var(--rule-soft); border-radius: var(--radius); padding: 12px 14px; background: #fafbfd; }
+.paste-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: none; }
+.paste-cols textarea { height: 340px; resize: none; font-size: 0.95rem; }
+.paste-preview { overflow: auto; height: 340px; border: 1px solid var(--rule-soft); border-radius: var(--radius); padding: 12px 14px; background: #fafbfd; }
 .paste-empty { color: var(--ink-faint); margin: 0; }
 .paste-count { margin: 0 0 10px; }
 .paste-preview ol { margin: 0; padding-left: 24px; }

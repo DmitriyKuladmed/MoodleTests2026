@@ -16,6 +16,7 @@ jobs:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      # Папка на сервере с git-клоном репозитория и файлом .env (.env на сервере не трогаем).
       APP_DIR: moodle-tests
     steps:
       - name: Check secrets
@@ -25,9 +26,6 @@ jobs:
             echo "::warning::Секреты для деплоя не заданы — пропускаю деплой."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@v4
-        if: steps.check.outputs.skip != 'true'
 
       - name: Set up SSH
         if: steps.check.outputs.skip != 'true'
@@ -39,42 +37,29 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null || { echo "::error::SSH_PRIVATE_KEY не похож на приватный ключ"; exit 1; }
-          echo "Отпечаток ключа: $(ssh-keygen -l -f ~/.ssh/id_deploy)"
-          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host server\n  HostName %s\n  User %s\n  Port %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  BatchMode yes\n' \
-            "$SSH_HOST" "$SSH_USER" "$SSH_PORT" > ~/.ssh/config
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port $SSH_PORT
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking accept-new
+            ConnectTimeout 25
+            ServerAliveInterval 15
+          EOF
 
-      - name: Build .env
-        if: steps.check.outputs.skip != 'true'
-        env:
-          DOMAIN: ${{ secrets.DOMAIN }}
-          EDITOR_LOGIN: ${{ secrets.EDITOR_LOGIN || 'kafedra' }}
-          EDITOR_PASSWORD: ${{ secrets.EDITOR_PASSWORD }}
-          ADMIN_LOGIN: ${{ secrets.ADMIN_LOGIN || 'admin' }}
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-        run: |
-          umask 077
-          {
-            printf 'DOMAIN=%s\n' "$DOMAIN"
-            printf 'EDITOR_LOGIN=%s\n' "$EDITOR_LOGIN"
-            printf 'EDITOR_PASSWORD=%s\n' "$EDITOR_PASSWORD"
-            printf 'ADMIN_LOGIN=%s\n' "$ADMIN_LOGIN"
-            printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
-            printf 'SECRET_KEY=%s\n' "$SECRET_KEY"
-          } > deploy.env
-
-      - name: Upload code
+      - name: Deploy
         if: steps.check.outputs.skip != 'true'
         run: |
-          ssh server "mkdir -p ~/$APP_DIR"
-          git archive --format=tar HEAD | ssh server "tar -x -C ~/$APP_DIR"
-          # Без scp: на сервере может не быть SFTP, через который работает новый scp.
-          ssh server "umask 077 && cat > ~/$APP_DIR/.env" < deploy.env
-
-      - name: Start
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          ssh server "cd ~/$APP_DIR && docker compose up -d --build --remove-orphans && docker image prune -f"
-          sleep 10
-          ssh server "cd ~/$APP_DIR && docker compose ps"
+          # Сервер бывает занят ботами, поэтому несколько попыток подключиться.
+          for attempt in 1 2 3 4 5; do
+            if ssh server "cd ~/$APP_DIR && git fetch --quiet origin main && git reset --hard origin/main && docker compose up -d --build --remove-orphans && docker image prune -f && docker compose ps"; then
+              exit 0
+            fi
+            echo "Попытка $attempt не удалась, жду…"
+            sleep 15
+          done
+          echo "::error::Не удалось задеплоить по SSH"
+          exit 1

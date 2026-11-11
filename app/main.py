@@ -28,7 +28,7 @@ from .questions import (
 BASE_DIR = Path(__file__).parent
 MINSK = timezone(timedelta(hours=3))  # Беларусь, без перехода на летнее время
 MAX_QUESTIONS = 2000
-STATIC_VERSION = "8"
+STATIC_VERSION = "9"
 
 
 def _fmt_dt(value: str | None) -> str:
