@@ -27,8 +27,9 @@
       <div class="settings-grid">
         <label class="field"><span>Время, мин</span>
           <input type="number" min="1" max="600" step="1" data-setting="time_limit" placeholder="Без лимита"></label>
-        <label class="field"><span>Вопросов студенту</span>
-          <input type="number" min="1" step="1" data-setting="questions_per_attempt" placeholder="Все"></label>
+        <label class="field"><span>Сколько вопросов получит студент</span>
+          <input type="number" min="1" step="1" data-setting="questions_per_attempt" placeholder="Все вопросы теста">
+          <small class="hint">Например, в тесте 100 вопросов, а здесь 25 — каждый студент получит 25 случайных вопросов из этих 100, у всех разные. Пусто — все вопросы.</small></label>
         <label class="field"><span>Попыток</span>
           <input type="number" min="1" max="100" step="1" data-setting="attempts" placeholder="Сколько угодно"></label>
         <label class="field"><span>Проходной балл, %</span>
