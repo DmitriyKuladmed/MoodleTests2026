@@ -298,6 +298,7 @@ details.dropdown > summary::-webkit-details-marker { display: none; }
   box-shadow: 0 10px 30px rgba(28, 43, 69, .14);
 }
 .menu-right { left: auto; right: 0; }
+.menu-up { top: auto; bottom: calc(100% + 6px); }
 .menu-item {
   display: block; width: 100%; text-align: left; font: inherit; background: none; border: 0;
   padding: 10px 12px; border-radius: 6px; cursor: pointer; color: var(--ink);

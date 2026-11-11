@@ -3,6 +3,18 @@
   "use strict";
 
   const $ = (sel, root = document) => root.querySelector(sel);
+  // Если снизу не хватает места, меню открывается вверх.
+  document.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("dropdown") || !d.open) return;
+    const menu = d.querySelector(".menu");
+    if (!menu) return;
+    menu.classList.remove("menu-up");
+    const r = menu.getBoundingClientRect();
+    const above = d.getBoundingClientRect().top;
+    if (r.bottom > window.innerHeight - 8 && above > window.innerHeight - r.top) menu.classList.add("menu-up");
+  }, true);
+
   const editorEl = $("#editor");
   if (!editorEl) return;
 
