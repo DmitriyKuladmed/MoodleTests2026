@@ -69,8 +69,8 @@ jobs:
         run: |
           ssh server "mkdir -p ~/$APP_DIR"
           git archive --format=tar HEAD | ssh server "tar -x -C ~/$APP_DIR"
-          scp -q deploy.env "server:~/$APP_DIR/.env"
-          ssh server "chmod 600 ~/$APP_DIR/.env"
+          # Без scp: на сервере может не быть SFTP, через который работает новый scp.
+          ssh server "umask 077 && cat > ~/$APP_DIR/.env" < deploy.env
 
       - name: Start
         if: steps.check.outputs.skip != 'true'
