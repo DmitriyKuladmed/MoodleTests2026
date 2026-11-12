@@ -66,6 +66,26 @@
     </ol>
   </section>
 
+  <section class="section" id="journal">
+    <h2>Журнал действий</h2>
+    <p>Кто и что делал на сайте: входы, создание и сохранение тестов, «Готово», удаления, ошибки сервера и браузера. Если преподаватель сообщает об ошибке, найдите в журнале код ошибки из сообщения, номер теста или метку сеанса <code>sid</code>.</p>
+    <div class="log-tools">
+      <input type="search" id="log-q" placeholder="Поиск: код ошибки, sid, test=12, слово…" aria-label="Поиск по журналу" autocomplete="off">
+      <select id="log-level" aria-label="Какие события показывать">
+        <option value="">Все события</option>
+        <option value="WARNING">Предупреждения и ошибки</option>
+        <option value="ERROR">Только ошибки</option>
+      </select>
+      <button type="button" class="btn" id="log-refresh">Обновить</button>
+      <a class="btn" href="/admin/logs?download=1">Скачать</a>
+    </div>
+    <div class="log-box" id="log-box" tabindex="0" role="log" aria-label="Журнал действий">
+      <div class="log-top"><button type="button" class="link" id="log-more" hidden>Загрузить раньше</button><span id="log-edge" hidden>Начало журнала</span></div>
+      <div id="log-list"></div>
+    </div>
+    <p class="hint" id="log-status" aria-live="polite"></p>
+  </section>
+
   {% if deleted %}
   <section class="section">
     <h2>Удалённые тесты</h2>
@@ -111,3 +131,4 @@
   </section>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/admin-logs.js?v={{ static_version }}" defer></script>{% endblock %}

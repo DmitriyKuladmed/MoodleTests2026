@@ -1,17 +1,25 @@
 """Веб-приложение: сбор тестов для Moodle."""
+import json
+import logging
+import re
 import tempfile
-from datetime import datetime, timedelta, timezone
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import moodle_xml
+from . import activity, moodle_xml
+from .activity import MINSK, event
 from .auth import Accounts, LoginThrottle
 from .config import Settings
 from .db import Database
@@ -26,9 +34,12 @@ from .questions import (
 )
 
 BASE_DIR = Path(__file__).parent
-MINSK = timezone(timedelta(hours=3))  # Беларусь, без перехода на летнее время
 MAX_QUESTIONS = 2000
-STATIC_VERSION = "12"
+STATIC_VERSION = "14"
+WARNING = logging.WARNING
+# Запросы, которые не пишем в журнал, если они прошли успешно: статика и картинки.
+QUIET_PREFIXES = ("/static/", "/favicon", "/images/")
+CLIENT_LOG_PER_MINUTE = 30
 
 
 def _fmt_dt(value: str | None) -> str:
@@ -89,6 +100,8 @@ def test_summary(test: dict) -> dict:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
+    log_path = activity.setup(settings.data_dir / "logs")
+    activity.log.info("%-18s data_dir=%s", "app.start", settings.data_dir)
     db = Database(settings.db_path)
     accounts = Accounts(db)
     accounts.ensure("editor", settings.editor_login, settings.editor_password)
@@ -98,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.db = db
     app.state.accounts = accounts
+    app.state.log_path = log_path
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.resolved_secret_key(),
@@ -106,6 +120,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         same_site="lax",
         https_only=settings.secure_cookies,
     )
+
+    # Журнал запросов. Объявлен раньше security_headers, значит работает внутри неё:
+    # заголовки безопасности попадают и на ответ 500, который собирается здесь.
+    @app.middleware("http")
+    async def access_log(request: Request, call_next):
+        request.state.rid = activity.new_id()
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            activity.log.exception("%-18s %s", "server.error", activity.fields_text(
+                {**activity.context(request), "method": request.method, "path": request.url.path}))
+            message = f"Ошибка на сервере. Сообщите администратору код {request.state.rid}"
+            if request.url.path.startswith("/api/"):
+                response = JSONResponse({"detail": message}, status_code=500)
+            else:
+                response = PlainTextResponse(message, status_code=500)
+        status = response.status_code
+        path = request.url.path
+        quiet = path.startswith(QUIET_PREFIXES) or getattr(request.state, "logged", False)
+        if status >= 400 or not quiet:
+            level = logging.ERROR if status >= 500 else WARNING if status >= 400 else logging.INFO
+            query = request.url.query
+            activity.log.log(level, "%-18s %s", "http", activity.fields_text({
+                **activity.context(request),
+                "method": request.method,
+                "path": f"{path}?{query}" if query else path,
+                "status": status,
+                "ms": round((time.perf_counter() - started) * 1000),
+                "detail": getattr(request.state, "error_detail", None),
+            }))
+        response.headers["X-Request-ID"] = request.state.rid
+        return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        request.state.error_detail = exc.detail  # попадёт в строку журнала о запросе
+        return await http_exception_handler(request, exc)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        request.state.error_detail = str(exc.errors())[:300]
+        return await request_validation_exception_handler(request, exc)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -201,6 +258,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         left = throttle.blocked_for(key)
         if left:
             minutes = max(1, (left + 59) // 60)
+            event(request, "auth.blocked", WARNING, login=login, minutes=minutes)
             return render(
                 request, "login.html", next=target, login=login,
                 error=f"Слишком много неудачных попыток. Попробуйте через {minutes} мин.",
@@ -208,14 +266,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         role = accounts.authenticate(login, password)
         if role is None:
             throttle.failure(key)
+            event(request, "auth.fail", WARNING, login=login)  # пароль в журнал не пишем
             return render(request, "login.html", next=target, login=login, error="Неверный логин или пароль")
         throttle.success(key)
         request.session.clear()
-        request.session.update({"role": role, "cv": accounts.credential_version(role)})
+        # sid — метка сеанса браузера: у преподавателей общий логин, по ней видно действия одного человека.
+        request.session.update({"role": role, "cv": accounts.credential_version(role), "sid": activity.new_id(6)})
+        event(request, "auth.login", login=login, ua=request.headers.get("user-agent", "")[:150])
         return RedirectResponse(target, status_code=303)
 
     @app.post("/logout")
     def logout(request: Request):
+        event(request, "auth.logout")
         request.session.clear()
         return RedirectResponse("/login", status_code=303)
 
@@ -240,14 +302,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         form = {"discipline": _clean(discipline), "teacher": _clean(teacher), "department": _clean(department)}
         if not form["discipline"] or not form["teacher"]:
+            event(request, "test.create_empty", WARNING, **form)
             return render(request, "new_test.html", role, form=form, nav="tests",
                           error="Укажите дисциплину и преподавателя")
         if not confirm:
             key = form["discipline"].casefold()
             duplicate = next((t for t in db.list_tests() if t["discipline"].casefold() == key), None)
             if duplicate:
+                event(request, "test.duplicate", existing=duplicate["id"], **form)
                 return render(request, "new_test.html", role, form=form, nav="tests", duplicate=duplicate)
         test = db.create_test(form["discipline"], form["teacher"], form["department"], default_settings())
+        event(request, "test.create", test=test["id"], confirmed_duplicate=bool(confirm) or None, **form)
         return RedirectResponse(f"/tests/{test['id']}", status_code=303)
 
     @app.get("/tests/{test_id}", response_class=HTMLResponse)
@@ -306,13 +371,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, "Не указана версия теста")
         saved = db.update_test(test_id, version, fields)
         if saved is None:
+            latest = db.get_test(test_id) or current
+            request.state.error_detail = "конфликт версий"
+            event(request, "test.conflict", WARNING, test=test_id, client_version=version,
+                  server_version=latest["version"])
             return JSONResponse(
                 {"detail": "Тест изменили в другой вкладке или другой человек. Обновите страницу.",
                  "conflict": True},
                 status_code=409,
             )
+        issues = validate_test(saved)
+        event(request, "test.save", test=test_id, version=f"{version}->{saved['version']}",
+              questions=len(questions), errors=sum(1 for i in issues if i["level"] == "error"),
+              status=saved["status"],
+              reopened=(current["status"] == "ready" and saved["status"] != "ready") or None)
         return {"version": saved["version"], "updated_at": _fmt_dt(saved["updated_at"]),
-                "status": saved["status"], "issues": validate_test(saved)}
+                "status": saved["status"], "issues": issues}
 
     @app.post("/api/tests/{test_id}/status")
     async def api_set_status(test_id: int, request: Request, role: str = Depends(api_role)):
@@ -326,27 +400,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ready = bool(body.get("ready"))
         issues = validate_test(test)
         if ready and has_errors(issues):
+            event(request, "test.ready_refused", WARNING, test=test_id,
+                  errors=sum(1 for i in issues if i["level"] == "error"))
             raise HTTPException(400, "Сначала исправьте ошибки в тесте")
         saved = db.set_status(test_id, "ready" if ready else "draft")
+        event(request, "test.status", test=test_id, status=saved["status"], questions=len(test["questions"]))
         return {"status": saved["status"], "version": saved["version"],
                 "updated_at": _fmt_dt(saved["updated_at"])}
 
     @app.delete("/api/tests/{test_id}")
-    def api_delete_test(test_id: int, role: str = Depends(api_role)):
-        get_test_or_404(test_id)
+    def api_delete_test(test_id: int, request: Request, role: str = Depends(api_role)):
+        test = get_test_or_404(test_id)
         db.soft_delete(test_id)
+        event(request, "test.delete", test=test_id, discipline=test["discipline"], teacher=test["teacher"],
+              questions=len(test["questions"]))
         return {"ok": True}
 
     @app.post("/api/tests/{test_id}/images")
-    async def api_upload_image(test_id: int, file: UploadFile = File(...), role: str = Depends(api_role)):
+    async def api_upload_image(test_id: int, request: Request, file: UploadFile = File(...),
+                               role: str = Depends(api_role)):
         get_test_or_404(test_id)
         data = await file.read(settings.max_image_bytes + 1)
         if len(data) > settings.max_image_bytes:
+            event(request, "image.rejected", WARNING, test=test_id, reason="too_big", name=file.filename)
             raise HTTPException(400, "Картинка больше 5 МБ — уменьшите её")
         mime = _sniff_image(data)
         if mime is None:
+            event(request, "image.rejected", WARNING, test=test_id, reason="format", name=file.filename,
+                  content_type=file.content_type)
             raise HTTPException(400, "Поддерживаются картинки PNG, JPEG, GIF и WebP")
         image_id = db.add_image(test_id, _clean(file.filename, 200) or "image", mime, data)
+        event(request, "image.upload", test=test_id, image=image_id, mime=mime, kb=round(len(data) / 1024))
         return {"id": image_id}
 
     @app.get("/images/{image_id}")
@@ -367,7 +451,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not isinstance(body, dict):
             raise HTTPException(400, "Некорректные данные")
         text = str(body.get("text") or "")[:500_000]
-        return parse_text(text)
+        result = parse_text(text)
+        # Сам текст теста не пишем — только размеры, чтобы видеть, что разбор не потерял вопросы.
+        event(request, "word.parse", chars=len(text), questions=len(result["questions"]),
+              no_answer=sum(1 for q in result["questions"]
+                            if q.get("type") in ("single", "multiple")
+                            and not any(o.get("correct") for o in q.get("options", []))),
+              warnings=len(result["warnings"]))
+        return result
+
+    # --- ошибки из браузера -----------------------------------------------
+    client_log_hits: dict[str, list[float]] = {}
+
+    @app.post("/api/client-log")
+    async def api_client_log(request: Request):
+        """Браузер сообщает о своих ошибках: JS-исключения, сбои сохранения из-за связи."""
+        if request.headers.get("x-requested-with") != "fetch":
+            raise HTTPException(403, "Запрос отклонён")
+        key, now = client_key(request), time.monotonic()
+        if len(client_log_hits) > 5000:
+            client_log_hits.clear()
+        hits = [t for t in client_log_hits.get(key, []) if now - t < 60]
+        if len(hits) >= CLIENT_LOG_PER_MINUTE:
+            client_log_hits[key] = hits
+            request.state.logged = True  # не засоряем журнал, если браузер шлёт ошибки потоком
+            return Response(status_code=204)
+        client_log_hits[key] = [*hits, now]
+        raw = await request.body()
+        if len(raw) > 16_000:
+            raise HTTPException(413, "Слишком большой отчёт")
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Некорректные данные")
+        kind = re.sub(r"[^a-z_]", "", str(body.get("kind") or ""))[:30] or "error"
+        limits = {"message": 500, "page": 200, "source": 200, "line": 10, "col": 10, "test": 10,
+                  "details": 500, "stack": 1500}
+        fields = {name: str(body.get(name))[:limit] for name, limit in limits.items() if body.get(name)}
+        event(request, f"client.{kind}", WARNING, **fields, ua=request.headers.get("user-agent", "")[:150])
+        return Response(status_code=204)
 
     # --- админка ----------------------------------------------------------
     @app.get("/admin", response_class=HTMLResponse)
@@ -385,29 +509,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                       msg=msg, nav="admin")
 
     @app.get("/admin/export/{test_id}.xml")
-    def admin_export_one(test_id: int, role: str = Depends(page_admin)):
+    def admin_export_one(test_id: int, request: Request, role: str = Depends(page_admin)):
         test = get_test_or_404(test_id)
         data = moodle_xml.build_test_xml(test, image_getter(test_id))
         name = moodle_xml.xml_filename(test)
+        event(request, "admin.export_xml", test=test_id, questions=len(test["questions"]), kb=round(len(data) / 1024))
         return Response(data, media_type="application/xml",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
     @app.get("/admin/export.zip")
-    def admin_export_all(role: str = Depends(page_admin), ready_only: int = 0):
+    def admin_export_all(request: Request, role: str = Depends(page_admin), ready_only: int = 0):
         tests = db.list_tests()
         if ready_only:
             tests = [t for t in tests if test_summary(t)["state"] == "ready"]
 
         data = moodle_xml.export_zip(tests, image_getter)
+        event(request, "admin.export_zip", tests=len(tests), ready_only=bool(ready_only), kb=round(len(data) / 1024))
         stamp = datetime.now(MINSK).strftime("%Y-%m-%d_%H-%M")
         name = f"moodle-tests_{stamp}.zip"
         return Response(data, media_type="application/zip",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
     @app.get("/admin/backup.db")
-    def admin_backup(role: str = Depends(page_admin)):
+    def admin_backup(request: Request, role: str = Depends(page_admin)):
         tmp = Path(tempfile.mkdtemp()) / "tests.db"
         db.backup_to(tmp)
+        event(request, "admin.backup", kb=round(tmp.stat().st_size / 1024))
         stamp = datetime.now(MINSK).strftime("%Y-%m-%d_%H-%M")
 
         def cleanup():
@@ -418,9 +545,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             background=BackgroundTask(cleanup))
 
     @app.post("/admin/tests/{test_id}/restore")
-    def admin_restore(test_id: int, role: str = Depends(page_admin)):
+    def admin_restore(test_id: int, request: Request, role: str = Depends(page_admin)):
         db.restore(test_id)
+        event(request, "admin.restore", test=test_id)
         return RedirectResponse("/admin?msg=restored", status_code=303)
+
+    @app.get("/admin/api/logs")
+    def admin_api_logs(request: Request, role: str = Depends(page_admin), q: str = "", level: str = "",
+                       before: str = "", skip: int = 0):
+        """Журнал для окна в админке. Первая загрузка без поиска — последние 10 минут,
+        дальше (before) — порции по 200 событий в прошлое. Поиск идёт по всему журналу."""
+        request.state.logged = True  # просмотр журнала в сам журнал не пишем
+        since = None
+        if not before and not q.strip() and not level:
+            since = (datetime.now(MINSK) - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        return activity.search(log_path, query=q[:200], level=level, before=before or None,
+                               skip=max(0, skip), since=since)
+
+    @app.get("/admin/logs")
+    def admin_logs(request: Request, role: str = Depends(page_admin), lines: int = 3000, download: int = 0):
+        request.state.logged = True  # просмотр журнала в сам журнал не пишем
+        if download:
+            stamp = datetime.now(MINSK).strftime("%Y-%m-%d_%H-%M")
+            if not log_path.exists():
+                return PlainTextResponse("")
+            return FileResponse(log_path, filename=f"journal_{stamp}.log", media_type="text/plain; charset=utf-8")
+        return PlainTextResponse(activity.tail(log_path, max(1, min(lines, 50_000))))
 
     @app.post("/admin/accounts")
     def admin_accounts(
@@ -434,8 +584,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400)
         login = login.strip()
         if not login or len(password) < 8:
+            event(request, "admin.password_weak", WARNING, account=account)
             return RedirectResponse("/admin?msg=weak#accounts", status_code=303)
         accounts.set(account, login, password)
+        event(request, "admin.password", account=account, login=login)  # сам пароль не пишем
         if account == "admin":
             request.session.update({"role": "admin", "cv": accounts.credential_version("admin")})
         return RedirectResponse(f"/admin?msg=password_{account}#accounts", status_code=303)

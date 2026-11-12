@@ -58,6 +58,9 @@
     conflict: false,
     timer: null,
     errorCursor: -1,
+    saveFailures: 0, // неудачные сохранения подряд — для журнала
+    failedSince: 0,
+    lastFailure: "",
     fresh: new Set(), // новые вопросы: ошибки покажем, когда человек уйдёт с вопроса
   };
 
@@ -185,6 +188,20 @@
     state.timer = setTimeout(save, delay);
   }
 
+  // Для журнала администратора: сколько раз подряд не сохранилось и почему.
+  const report = (kind, data) => { if (window.reportProblem) window.reportProblem(kind, { test: TEST_ID, ...data }); };
+  function noteSaveFailure(reason) {
+    if (!state.saveFailures) state.failedSince = Date.now();
+    state.saveFailures += 1;
+    state.lastFailure = reason;
+  }
+  function noteSaveSuccess() {
+    if (!state.saveFailures) return;
+    const seconds = Math.round((Date.now() - state.failedSince) / 1000);
+    report("save_recovered", { details: `попыток ${state.saveFailures}, ${seconds} с, причина: ${state.lastFailure}` });
+    state.saveFailures = 0;
+  }
+
   async function save() {
     if (state.conflict || state.saving) return;
     if (state.changeId === state.savedChangeId) return;
@@ -206,10 +223,12 @@
       }
       if (!res.ok) {
         retryIn = 5000;
+        noteSaveFailure(`HTTP ${res.status} ${res.headers.get("X-Request-ID") || ""}`.trim());
         setSave("error", await errorText(res, "Не сохранилось, повторяю…"));
         return;
       }
       const data = await res.json();
+      noteSaveSuccess();
       state.version = data.version;
       state.status = data.status;
       state.issues = data.issues;
@@ -217,8 +236,9 @@
       hideBanner();
       applyIssues();
       setSave(state.changeId === changeId ? "saved" : "saving");
-    } catch (_) {
+    } catch (err) {
       retryIn = 5000;
+      noteSaveFailure(`нет связи (${err && err.message ? err.message : err})`);
       setSave("error");
     } finally {
       state.saving = false;
@@ -268,6 +288,8 @@
 
   window.addEventListener("beforeunload", (e) => {
     if (state.changeId !== state.savedChangeId) {
+      report("leave_unsaved", { details: `несохранённых правок: ${state.changeId - state.savedChangeId}, ` +
+        `неудачных сохранений подряд: ${state.saveFailures}${state.conflict ? ", конфликт версий" : ""}` });
       save();
       e.preventDefault();
       e.returnValue = "";
@@ -670,14 +692,15 @@
       });
       if (!res.ok) {
         toast(await errorText(res, "Не удалось загрузить картинку"));
-        return;
+        return; // сервер сам записал причину в журнал
       }
       const data = await res.json();
       q.image = data.id;
       rerender(q);
       markDirty();
       hideToast();
-    } catch (_) {
+    } catch (err) {
+      report("image_upload_failed", { details: `${file.type}, ${Math.round(file.size / 1024)} КБ: ${err && err.message}` });
       toast("Нет связи — картинка не загрузилась");
     }
   }
