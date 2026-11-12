@@ -70,3 +70,15 @@ def test_security_headers(app):
     r = TestClient(app).get("/login")
     assert r.headers["cross-origin-opener-policy"] == "same-origin"
     assert "camera=()" in r.headers["permissions-policy"]
+
+
+def test_guest_requests_and_bans_record_browser(app, editor):
+    bot = TestClient(app, headers={"User-Agent": "python-requests/2.31"})
+    bot.get("/login")
+    guest_line = [l for l in lines_with(app, "http") if "role=гость" in l][-1]
+    assert "ua=python-requests/2.31" in guest_line
+    bot.get("/info.php")
+    assert "ua=python-requests/2.31" in lines_with(app, "security.ban")[0]
+    editor.get("/")
+    own = [l for l in lines_with(app, "http") if "role=editor" in l and "path=/ " in l]
+    assert own and "ua=" not in own[-1]  # у вошедших браузер уже есть в строке auth.login

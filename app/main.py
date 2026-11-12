@@ -86,6 +86,10 @@ def safe_next(value: str | None) -> str:
     return value
 
 
+def _user_agent(request: Request) -> str:
+    return request.headers.get("user-agent", "")[:200] or "нет"
+
+
 def _clean(value: str | None, limit: int = 300) -> str:
     return " ".join((value or "").split())[:limit]
 
@@ -145,19 +149,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return HTMLResponse(BLOCKED_PAGE, status_code=403)
         if not ban and guard.is_trap(full):
             guard.ban(ip, "ловушка", full)
-            event(request, "security.ban", WARNING, reason="ловушка", path=full, hours=guard.ban_seconds // 3600)
+            event(request, "security.ban", WARNING, reason="ловушка", path=full,
+                  hours=guard.ban_seconds // 3600, ua=_user_agent(request))
             request.state.silent = True
             return PlainTextResponse("Not Found", status_code=404)  # не подсказываем, что его заметили
         if not ban and not path.startswith(("/static/", "/favicon")) and guard.too_fast(ip):
             guard.ban(ip, "слишком часто", full)
             event(request, "security.ban", WARNING, reason="слишком часто", path=full,
-                  hours=guard.ban_seconds // 3600)
+                  hours=guard.ban_seconds // 3600, ua=_user_agent(request))
             request.state.silent = True
             return PlainTextResponse("Too Many Requests", status_code=429)
         response = await call_next(request)
         if response.status_code == 404 and not ban and guard.not_found(ip):
             guard.ban(ip, "много 404", full)
-            event(request, "security.ban", WARNING, reason="много 404", path=full, hours=guard.ban_seconds // 3600)
+            event(request, "security.ban", WARNING, reason="много 404", path=full,
+                  hours=guard.ban_seconds // 3600, ua=_user_agent(request))
         return response
 
     app.add_middleware(BaseHTTPMiddleware, dispatch=protect)
@@ -190,9 +196,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = request.url.path
         quiet = path.startswith(QUIET_PREFIXES) or getattr(request.state, "logged", False)
         silent = getattr(request.state, "silent", False)
+        guest = (request.scope.get("session") or {}).get("role") is None
         if not silent and (status >= 400 or not quiet):
             level = logging.ERROR if status >= 500 else WARNING if status >= 400 else logging.INFO
-            guest = (request.scope.get("session") or {}).get("role") is None
             if guest and status in (404, 405):
                 level = logging.INFO  # боты без входа перебирают адреса — это не проблема сайта
             query = request.url.query
@@ -203,6 +209,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": status,
                 "ms": round((time.perf_counter() - started) * 1000),
                 "detail": getattr(request.state, "error_detail", None),
+                # У гостей пишем браузер: по нему видно ботов (curl, python-requests…).
+                # У вошедших он уже есть в строке auth.login.
+                "ua": _user_agent(request) if guest else None,
             }))
         response.headers["X-Request-ID"] = request.state.rid
         return response
@@ -329,7 +338,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.session.clear()
         # sid — метка сеанса браузера: у преподавателей общий логин, по ней видно действия одного человека.
         request.session.update({"role": role, "cv": accounts.credential_version(role), "sid": activity.new_id(6)})
-        event(request, "auth.login", login=login, ua=request.headers.get("user-agent", "")[:150])
+        event(request, "auth.login", login=login, ua=_user_agent(request))
         return RedirectResponse(target, status_code=303)
 
     @app.post("/logout")
