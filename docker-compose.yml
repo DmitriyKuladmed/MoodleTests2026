@@ -8,6 +8,9 @@ services:
       SECURE_COOKIES: "true"
     volumes:
       - app_data:/data
+    # Потолок памяти: обычно приложению хватает ~50 МБ, запас — на выгрузку большого архива.
+    mem_limit: 500m
+    memswap_limit: 500m
 
   caddy:
     image: caddy:2
@@ -23,6 +26,8 @@ services:
       - caddy_config:/config
     depends_on:
       - app
+    mem_limit: 200m
+    memswap_limit: 200m
 
 volumes:
   app_data:
