@@ -22,6 +22,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import activity, moodle_xml
 from .activity import MINSK, event
 from .auth import Accounts, LoginThrottle
+from .geo import Geo
 from .guard import Guard
 from .config import Settings
 from .db import Database
@@ -132,6 +133,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.log_path = log_path
     guard = Guard()
     app.state.guard = guard
+    geo = Geo(settings.data_dir / "geo", download=settings.geoip_download)
+    app.state.geo = geo
+
+    def where(request: Request) -> str | None:
+        """Страна и город по IP запроса (для журнала)."""
+        return geo.where(request.client.host if request.client else None)
 
     # Защита от сканеров. Добавлена раньше SessionMiddleware, значит работает внутри неё
     # и уже знает, вошёл ли человек: вошедших блокировки не касаются.
@@ -150,20 +157,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not ban and guard.is_trap(full):
             guard.ban(ip, "ловушка", full)
             event(request, "security.ban", WARNING, reason="ловушка", path=full,
-                  hours=guard.ban_seconds // 3600, ua=_user_agent(request))
+                  hours=guard.ban_seconds // 3600, geo=where(request), ua=_user_agent(request))
             request.state.silent = True
             return PlainTextResponse("Not Found", status_code=404)  # не подсказываем, что его заметили
         if not ban and not path.startswith(("/static/", "/favicon")) and guard.too_fast(ip):
             guard.ban(ip, "слишком часто", full)
             event(request, "security.ban", WARNING, reason="слишком часто", path=full,
-                  hours=guard.ban_seconds // 3600, ua=_user_agent(request))
+                  hours=guard.ban_seconds // 3600, geo=where(request), ua=_user_agent(request))
             request.state.silent = True
             return PlainTextResponse("Too Many Requests", status_code=429)
         response = await call_next(request)
         if response.status_code == 404 and not ban and guard.not_found(ip):
             guard.ban(ip, "много 404", full)
             event(request, "security.ban", WARNING, reason="много 404", path=full,
-                  hours=guard.ban_seconds // 3600, ua=_user_agent(request))
+                  hours=guard.ban_seconds // 3600, geo=where(request), ua=_user_agent(request))
         return response
 
     app.add_middleware(BaseHTTPMiddleware, dispatch=protect)
@@ -209,9 +216,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": status,
                 "ms": round((time.perf_counter() - started) * 1000),
                 "detail": getattr(request.state, "error_detail", None),
-                # У гостей пишем браузер: по нему видно ботов (curl, python-requests…).
-                # У вошедших он уже есть в строке auth.login.
-                "ua": _user_agent(request) if guest else None,
+                # Откуда и с какого браузера — у каждого запроса: так видно ботов (curl, python-requests…)
+                # и кто из пользователей зашёл из необычного места.
+                "geo": where(request),
+                "ua": _user_agent(request),
             }))
         response.headers["X-Request-ID"] = request.state.rid
         return response
@@ -324,7 +332,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         left = throttle.blocked_for(key)
         if left:
             minutes = max(1, (left + 59) // 60)
-            event(request, "auth.blocked", WARNING, login=login, minutes=minutes)
+            event(request, "auth.blocked", WARNING, login=login, minutes=minutes, geo=where(request))
             return render(
                 request, "login.html", next=target, login=login,
                 error=f"Слишком много неудачных попыток. Попробуйте через {minutes} мин.",
@@ -332,13 +340,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         role = accounts.authenticate(login, password)
         if role is None:
             throttle.failure(key)
-            event(request, "auth.fail", WARNING, login=login)  # пароль в журнал не пишем
+            event(request, "auth.fail", WARNING, login=login, geo=where(request))  # пароль в журнал не пишем
             return render(request, "login.html", next=target, login=login, error="Неверный логин или пароль")
         throttle.success(key)
         request.session.clear()
         # sid — метка сеанса браузера: у преподавателей общий логин, по ней видно действия одного человека.
         request.session.update({"role": role, "cv": accounts.credential_version(role), "sid": activity.new_id(6)})
-        event(request, "auth.login", login=login, ua=_user_agent(request))
+        event(request, "auth.login", login=login, geo=where(request), ua=_user_agent(request))
         return RedirectResponse(target, status_code=303)
 
     @app.post("/logout")
@@ -570,7 +578,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "errors": sum(1 for t in tests if t["state"] == "errors"),
             "questions": sum(t["questions"] for t in tests),
         }
-        bans = [{"ip": ip, "reason": b.reason, "path": b.path, "blocked": b.blocked,
+        bans = [{"ip": ip, "geo": geo.where(ip) or "", "reason": b.reason, "path": b.path, "blocked": b.blocked,
                  "since": datetime.fromtimestamp(b.since, MINSK).strftime("%d.%m %H:%M"),
                  "until": datetime.fromtimestamp(b.until, MINSK).strftime("%d.%m %H:%M")}
                 for ip, b in guard.active()]

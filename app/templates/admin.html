@@ -72,11 +72,12 @@
     {% if msg == 'unbanned' %}<div class="alert alert-ok">Адрес разблокирован.</div>{% endif %}
     {% if bans %}
     <table class="list">
-      <thead><tr><th>Адрес</th><th>Причина</th><th>Запрос</th><th>С</th><th>До</th><th class="num">Отклонено</th><th><span class="visually-hidden">Действия</span></th></tr></thead>
+      <thead><tr><th>Адрес</th><th>Откуда</th><th>Причина</th><th>Запрос</th><th>С</th><th>До</th><th class="num">Отклонено</th><th><span class="visually-hidden">Действия</span></th></tr></thead>
       <tbody>
       {% for b in bans %}
         <tr>
           <td>{{ b.ip }}</td>
+          <td class="muted">{{ b.geo }}</td>
           <td>{{ b.reason }}</td>
           <td class="muted"><code>{{ b.path|truncate(60) }}</code></td>
           <td class="muted">{{ b.since }}</td>

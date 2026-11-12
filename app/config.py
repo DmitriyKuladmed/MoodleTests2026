@@ -36,6 +36,8 @@ class Settings:
     admin_password: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
     # За HTTPS (Caddy) cookie отдаются только по защищённому соединению.
     secure_cookies: bool = field(default_factory=lambda: _bool(os.getenv("SECURE_COOKIES"), False))
+    # Скачивать базу геолокации DB-IP (страна и город по IP в журнале). На сервере включено в docker-compose.
+    geoip_download: bool = field(default_factory=lambda: _bool(os.getenv("GEOIP_DOWNLOAD"), False))
     max_image_bytes: int = 5 * 1024 * 1024
     # Защита от перебора пароля.
     login_max_failures: int = 5

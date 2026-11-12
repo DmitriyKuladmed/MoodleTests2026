@@ -6,6 +6,7 @@ services:
     environment:
       DATA_DIR: /data
       SECURE_COOKIES: "true"
+      GEOIP_DOWNLOAD: "true"  # страна и город по IP в журнале (база DB-IP Lite в томе app_data)
     volumes:
       - app_data:/data
     # Потолок памяти: обычно приложению хватает ~50 МБ, запас — на выгрузку большого архива.
