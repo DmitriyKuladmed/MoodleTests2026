@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Инструкция: тесты для аккредитации</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400..700&display=swap">
+<style>
+  @page { size: A4; margin: 16mm 16mm 18mm; }
+  :root {
+    --ink: #1b2537; --muted: #5b6577; --line: #dde2ea; --soft: #f3f5f9;
+    --blue: #2d55c8; --green: #1f7a45; --red: #c0392b; --yellow: #fff6db;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Golos Text", "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 26pt; line-height: 1.15; margin: 0 0 6mm; }
+  h2 { font-size: 15pt; margin: 0 0 3mm; padding-top: 1mm; break-after: avoid; }
+  h2 .n { display: inline-block; width: 9mm; height: 9mm; line-height: 9mm; text-align: center; border-radius: 50%;
+          background: var(--blue); color: #fff; font-size: 11pt; margin-right: 2.5mm; vertical-align: 1px; }
+  h3 { font-size: 11.5pt; margin: 5mm 0 2mm; break-after: avoid; }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1mm; }
+  b { font-weight: 650; }
+  section { margin-bottom: 8mm; }
+  .page-break { break-before: page; }
+
+  /* обложка */
+  .cover { height: 255mm; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 3mm; color: var(--muted); font-weight: 600; margin-bottom: 30mm; }
+  .brand i { width: 8mm; height: 8mm; border-radius: 50%; background: var(--blue); color: #fff; font-style: normal;
+             display: inline-flex; align-items: center; justify-content: center; font-size: 12pt; }
+  .lead { font-size: 13pt; color: var(--muted); max-width: 150mm; margin-bottom: 10mm; }
+  .site { display: inline-block; background: var(--soft); border: 1px solid var(--line); border-radius: 3mm;
+          padding: 4mm 6mm; font-size: 12pt; margin-bottom: 12mm; }
+  .site b { color: var(--blue); }
+  .toc { border-top: 1px solid var(--line); padding-top: 6mm; }
+  .toc h3 { margin-top: 0; color: var(--muted); font-size: 10pt; text-transform: uppercase; letter-spacing: .06em; }
+  .toc ol { list-style: none; padding: 0; columns: 2; column-gap: 10mm; }
+  .toc li { display: flex; gap: 3mm; margin-bottom: 2.2mm; break-inside: avoid; }
+  .toc li span { color: var(--blue); font-weight: 700; min-width: 5mm; }
+  .toc a { color: inherit; text-decoration: none; }
+
+  /* шаги */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; margin: 4mm 0; }
+  .step { background: var(--soft); border-radius: 3mm; padding: 4mm; }
+  .step b { display: block; color: var(--blue); font-size: 18pt; line-height: 1; margin-bottom: 2mm; }
+
+  figure { margin: 3mm 0 4mm; break-inside: avoid; }
+  figure img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 2.5mm; }
+  figure.s img { max-width: 115mm; }
+  figure.xs img { max-width: 80mm; }
+  figcaption { font-size: 9pt; color: var(--muted); margin-top: 1.5mm; }
+  .row { display: flex; gap: 6mm; align-items: flex-start; }
+  .row > * { flex: 1; min-width: 0; }
+
+  .note { background: var(--yellow); border-left: 1.2mm solid #e0b23c; border-radius: 2mm; padding: 3mm 4mm; margin: 3mm 0; break-inside: avoid; }
+  .tip { background: #eaf1ff; border-left: 1.2mm solid var(--blue); border-radius: 2mm; padding: 3mm 4mm; margin: 3mm 0; break-inside: avoid; }
+
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; break-inside: avoid; }
+  td, th { text-align: left; vertical-align: top; padding: 2mm 3mm; border-bottom: 1px solid var(--line); }
+  th { font-size: 9pt; color: var(--muted); font-weight: 600; }
+  td.k { width: 42mm; white-space: nowrap; font-weight: 600; }
+  .ic { display: inline-flex; width: 6.5mm; height: 6.5mm; align-items: center; justify-content: center; border: 1px solid var(--line);
+        border-radius: 1.5mm; vertical-align: middle; margin-right: 2mm; color: var(--muted); }
+  .ic svg { width: 4.4mm; height: 4.4mm; }
+  .btn { display: inline-block; border: 1px solid var(--line); border-radius: 1.5mm; padding: 0 2mm; font-weight: 600; font-size: 9.5pt; white-space: nowrap; }
+  .btn.blue { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .btn.green { background: var(--green); color: #fff; border-color: var(--green); }
+  .st { font-weight: 600; white-space: nowrap; }
+  .st.g { color: var(--green); } .st.r { color: var(--red); } .st.d { color: var(--muted); }
+  kbd { font-family: inherit; font-size: 9pt; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 1mm; padding: 0 1.2mm; background: #fff; }
+  pre { background: var(--soft); border-radius: 2mm; padding: 3mm 4mm; font-size: 9.5pt; margin: 2mm 0; font-family: Consolas, monospace; }
+  .faq dt { font-weight: 650; margin-top: 3mm; break-after: avoid; }
+  .faq dd { margin: 1mm 0 0; }
+</style>
+</head>
+<body>
+
+<!-- ОБЛОЖКА -->
+<div class="cover">
+  <div class="brand"><i>✓</i>Тесты для аккредитации · БГТУ</div>
+  <h1>Как заполнить тест<br>для аккредитации</h1>
+  <p class="lead">Короткая инструкция для преподавателей: как войти на сайт, создать тест по своей дисциплине, добавить вопросы и сдать его администратору. В конце есть раздел для администратора.</p>
+  <div class="site">Адрес сайта: <b>https://bstu-tests.duckdns.org</b><br><span style="font-size:10pt;color:var(--muted)">Логин и пароль выдаёт администратор</span></div>
+
+  <div class="toc">
+    <h3>Содержание</h3>
+    <ol>
+      <li><span>1</span><a href="#s1">Коротко: порядок работы</a></li>
+      <li><span>2</span><a href="#s2">Вход на сайт</a></li>
+      <li><span>3</span><a href="#s3">Создание теста</a></li>
+      <li><span>4</span><a href="#s4">Вопрос вручную и кнопки</a></li>
+      <li><span>5</span><a href="#s5">Вставка теста из Word</a></li>
+      <li><span>6</span><a href="#s6">Другие типы вопросов и меню «⋯»</a></li>
+      <li><span>7</span><a href="#s7">Время и число вопросов</a></li>
+      <li><span>8</span><a href="#s8">Сохранение и кнопка «Готово»</a></li>
+      <li><span>9</span><a href="#s9">Список тестов и проверка</a></li>
+      <li><span>10</span><a href="#s10">Частые вопросы</a></li>
+      <li><span>11</span><a href="#s11">Для администратора</a></li>
+    </ol>
+  </div>
+</div>
+
+<!-- 1 -->
+<section id="s1" class="page-break">
+  <h2><span class="n">1</span>Коротко: порядок работы</h2>
+  <p>Один тест = одна дисциплина. Всё делается в браузере, ничего устанавливать не нужно.</p>
+  <div class="steps">
+    <div class="step"><b>1</b>Войдите на сайт и нажмите <span class="btn blue">+ Новый тест</span>. Укажите дисциплину и ФИО.</div>
+    <div class="step"><b>2</b>Добавьте вопросы: по одному вручную или сразу весь тест из Word. Отметьте верные ответы.</div>
+    <div class="step"><b>3</b>Нажмите <span class="btn green">Готово</span>. Если что-то не так, сайт покажет, что исправить.</div>
+  </div>
+  <div class="tip">Сохранять ничего не нужно: сайт сохраняет каждое изменение сам. Можно закрыть вкладку и вернуться к тесту позже.</div>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <h2><span class="n">2</span>Вход на сайт</h2>
+  <div class="row">
+    <div>
+      <ol>
+        <li>Откройте в браузере <b>https://bstu-tests.duckdns.org</b>.</li>
+        <li>Введите <b>логин и пароль</b>. Они общие для всех преподавателей, их выдаёт администратор. Чтобы увидеть, что набрано в поле пароля, нажмите на глазик справа в этом поле.</li>
+        <li>Нажмите <span class="btn blue">Войти</span>.</li>
+      </ol>
+      <div class="note">После 5 неправильных паролей подряд вход блокируется на 15 минут. Если пароль не подходит, лучше уточните его у администратора.</div>
+      <p>Чтобы выйти, нажмите <b>«Выйти»</b> в правом верхнем углу.</p>
+    </div>
+    <figure class="xs"><img src="img/01-login.png" alt="Страница входа"></figure>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <h2><span class="n">3</span>Создание теста</h2>
+  <div class="row">
+    <div>
+      <ol>
+        <li>На главной странице нажмите <span class="btn blue">+ Новый тест</span>.</li>
+        <li>Заполните <b>Дисциплину</b> и <b>ФИО</b>. Кафедру указывать не обязательно.</li>
+        <li>Нажмите <span class="btn blue">Создать тест</span>, откроется редактор.</li>
+      </ol>
+      <p>ФИО и кафедру сайт запомнит, и в следующий раз их не придётся вводить заново.</p>
+      <div class="note">Если тест по этой дисциплине уже есть, сайт предупредит и предложит его открыть. Не создавайте второй тест на ту же дисциплину, лучше дополните существующий.</div>
+    </div>
+    <figure class="s"><img src="img/03-new-test.png" alt="Форма нового теста"></figure>
+  </div>
+  <figure><img src="img/04-editor-empty.png" alt="Пустой редактор теста"><figcaption>Редактор нового теста. Вопросы добавляются тремя кнопками внизу.</figcaption></figure>
+</section>
+
+<!-- 4 -->
+<section id="s4" class="page-break">
+  <h2><span class="n">4</span>Вопрос вручную и кнопки</h2>
+  <p>Нажмите <span class="btn blue">+ Добавить вопрос</span>. Появится карточка вопроса: напишите текст вопроса и варианты ответа, затем нажмите <b>«Верный»</b> у правильного варианта.</p>
+  <figure><img src="img/05-question.png" alt="Карточка вопроса"><figcaption>Верный вариант подсвечивается зелёным.</figcaption></figure>
+
+  <table>
+    <tr><th>Кнопка</th><th>Что делает</th></tr>
+    <tr><td class="k"><span class="btn">✓ Верный</span></td><td>Отмечает правильный вариант. Можно отметить несколько: тогда студент должен выбрать все верные. Тип вопроса сайт подберёт сам.</td></tr>
+    <tr><td class="k"><span class="ic">✕</span>Крестик</td><td>Удаляет вариант ответа.</td></tr>
+    <tr><td class="k" style="color:var(--blue)">+ Ещё вариант</td><td>Добавляет ещё одну строку для варианта.</td></tr>
+    <tr><td class="k"><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="8.5" r="1.5"/><path d="M3.5 14l4-4 3 3 2-2 4 4"/></svg></span>Картинка</td><td>Добавляет к вопросу рисунок (PNG, JPG, GIF, до 5 МБ). Ещё картинку можно вставить через <kbd>Ctrl</kbd>+<kbd>V</kbd> или перетащить мышкой на вопрос.</td></tr>
+    <tr><td class="k"><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15V5M5.5 9.5 10 5l4.5 4.5"/></svg></span><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5v10M5.5 10.5 10 15l4.5-4.5"/></svg></span>Стрелки</td><td>Перемещают вопрос выше или ниже в списке.</td></tr>
+    <tr><td class="k"><span class="ic"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></span>Ещё</td><td>Копия вопроса, смена типа, баллы, перемешивание вариантов (см. раздел 6).</td></tr>
+    <tr><td class="k"><span class="ic" style="color:var(--red)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 9.5h6.6L14 6"/></svg></span>Корзина</td><td>Удаляет вопрос целиком. Сразу после удаления внизу появится кнопка, чтобы его вернуть.</td></tr>
+  </table>
+</section>
+
+<!-- 5 -->
+<section id="s5" class="page-break">
+  <h2><span class="n">5</span>Вставка теста из Word</h2>
+  <p>Если тест уже набран в Word, не переписывайте его вручную, а вставьте целиком.</p>
+  <ol>
+    <li>Нажмите <span class="btn">Вставить из Word</span>.</li>
+    <li>В Word нажмите <kbd>Ctrl</kbd>+<kbd>A</kbd> (выделить всё), затем <kbd>Ctrl</kbd>+<kbd>C</kbd> (копировать).</li>
+    <li>Щёлкните в левое поле окна и нажмите <kbd>Ctrl</kbd>+<kbd>V</kbd>.</li>
+    <li>Справа появится, как сайт понял вопросы. Если всё верно, нажмите <span class="btn blue">Добавить N вопросов</span>.</li>
+  </ol>
+  <figure><img src="img/08-paste.png" alt="Окно вставки из Word"><figcaption>Слева текст из Word, справа результат: верные ответы отмечены галочкой.</figcaption></figure>
+
+  <h3>Как сайт находит верные ответы</h3>
+  <ul>
+    <li>Ответ <b>выделен в Word</b> жирным, подчёркиванием, цветом или заливкой.</li>
+    <li>После ответа стоит <b>звёздочка *</b>.</li>
+    <li>После вариантов есть строка <b>«Ответ: б»</b>.</li>
+  </ul>
+  <pre>1. Единица измерения силы в СИ:
+а) Джоуль
+б) Ньютон *
+в) Ватт</pre>
+  <div class="note">После вставки обязательно просмотрите вопросы. Если у какого-то вопроса верный ответ не нашёлся, отметьте его кнопкой «Верный».</div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <h2><span class="n">6</span>Другие типы вопросов и меню «⋯»</h2>
+  <div class="row">
+    <div>
+      <p>Обычно хватает вопроса с выбором ответа. Если нужен другой формат, нажмите <span class="btn">Другой тип вопроса</span>:</p>
+      <table>
+        <tr><td class="k">Верно или неверно</td><td>Утверждение, студент выбирает «верно» или «неверно».</td></tr>
+        <tr><td class="k">Ответ словом</td><td>Студент вписывает слово. Можно добавить другие допустимые написания.</td></tr>
+        <tr><td class="k">Ответ числом</td><td>Студент вводит число. Можно задать погрешность (±).</td></tr>
+        <tr><td class="k">Соответствие</td><td>Нужно соединить пары, например термин и определение. Можно добавить «лишний ответ», чтобы было труднее угадать.</td></tr>
+      </table>
+    </div>
+    <figure class="xs"><img src="img/06-other-types.png" alt="Меню других типов вопроса"></figure>
+  </div>
+  <div class="row">
+    <figure class="s"><img src="img/07-more-menu.png" alt="Меню Ещё у вопроса"></figure>
+    <div>
+      <p>Кнопка <b>«⋯»</b> на карточке вопроса открывает меню:</p>
+      <ul>
+        <li><b>Сделать копию</b>: дублирует вопрос, удобно для похожих вопросов.</li>
+        <li><b>Тип вопроса</b>: поменять тип уже набранного вопроса.</li>
+        <li><b>Баллы за вопрос</b>: по умолчанию 1.</li>
+        <li><b>Перемешивать варианты</b>: варианты у каждого студента в разном порядке. Обычно лучше оставить включённым.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7" class="page-break">
+  <h2><span class="n">7</span>Время и число вопросов</h2>
+  <p>В шапке теста нажмите <b>«Время и число вопросов»</b>. Все поля необязательные: если оставить их пустыми, администратор настроит тест сам.</p>
+  <div class="row">
+    <figure><img src="img/09-settings.png" alt="Настройки теста"></figure>
+    <table>
+      <tr><td class="k">Время, мин</td><td>Сколько минут даётся на тест. Пусто — без ограничения.</td></tr>
+      <tr><td class="k">Сколько вопросов<br>получит студент</td><td>Например, в тесте 100 вопросов, а здесь стоит 25: каждый студент получит 25 случайных вопросов, у всех разные. Пусто — все вопросы.</td></tr>
+      <tr><td class="k">Попыток</td><td>Сколько раз можно пройти тест.</td></tr>
+      <tr><td class="k">Проходной балл, %</td><td>Минимальный процент для зачёта.</td></tr>
+      <tr><td class="k">Перемешивать<br>вопросы</td><td>Вопросы идут в случайном порядке.</td></tr>
+      <tr><td class="k">Комментарий</td><td>Любые пожелания администратору.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="s8" class="page-break">
+  <h2><span class="n">8</span>Сохранение и кнопка «Готово»</h2>
+  <p>Вверху страницы всегда видна панель:</p>
+  <figure><img src="img/05b-bar.png" alt="Верхняя панель редактора"></figure>
+  <ul>
+    <li><span class="st g">● Сохранено</span>: всё записано на сервер. Пока идёт сохранение, там написано «Сохраняю…». Если пропал интернет, появится «Нет связи, повторяю…»: сайт сам допишет изменения, когда связь вернётся.</li>
+    <li><span class="btn green">Готово</span>: проверяет тест. Такая же кнопка есть внизу, под вопросами.</li>
+    <li><b>← Все тесты</b>: возврат к списку.</li>
+  </ul>
+  <h3>Если в тесте ошибка</h3>
+  <p>После нажатия «Готово» вопросы с ошибками выделяются красным, и в каждом написано, что исправить. На панели появляется красная кнопка <span class="st r">Исправить: N</span>: нажимайте её, и сайт по очереди покажет каждый такой вопрос.</p>
+  <figure><img src="img/10b-bar-errors.png" alt="Панель с ошибками"></figure>
+  <div class="row">
+    <figure class="s"><img src="img/10-error-card.png" alt="Вопрос с ошибкой"></figure>
+    <p style="flex:0 0 52mm">Частые ошибки: не отмечен верный ответ, пустой текст вопроса, меньше двух вариантов. Ещё одна: в настройках студенту задано больше вопросов, чем есть в тесте.</p>
+  </div>
+  <h3>Если всё в порядке</h3>
+  <div class="row">
+    <div><p>Появится окно «Тест готов». Администратор увидит тест в списке готовых. Если позже понадобится что-то поправить, просто откройте тест снова и после правок ещё раз нажмите «Готово».</p></div>
+    <figure class="xs"><img src="img/11-done.png" alt="Окно Тест готов"></figure>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="s9" class="page-break">
+  <h2><span class="n">9</span>Список тестов и проверка</h2>
+  <p>На главной странице («Все тесты») видны тесты всех преподавателей. Чтобы открыть тест, нажмите на его строку. Если тестов много, сверху появится поиск.</p>
+  <figure><img src="img/12-list.png" alt="Список тестов"></figure>
+  <table>
+    <tr><th>Состояние</th><th>Что значит</th></tr>
+    <tr><td class="k"><span class="st d">○ Заполняется</span></td><td>Тест ещё не сдан: вопросов пока нет или «Готово» ещё не нажимали.</td></tr>
+    <tr><td class="k"><span class="st r">○ Нужно исправить</span></td><td>В тесте есть ошибки, например не отмечен верный ответ. Откройте тест и нажмите «Готово»: сайт покажет, что не так.</td></tr>
+    <tr><td class="k"><span class="st g">● Готов</span></td><td>Тест проверен, администратор может загружать его в Moodle.</td></tr>
+  </table>
+  <h3>Посмотреть как студент</h3>
+  <div class="row">
+    <div>
+      <p>Внизу редактора есть ссылка <b>«Посмотреть как студент»</b>. Она открывает тест в том виде, в каком его увидят студенты. Кнопка <b>«Показать ответы»</b> подсвечивает верные варианты зелёным, это удобно для финальной проверки.</p>
+      <p>Там же внизу есть <b style="color:var(--red)">«Удалить тест»</b>. Удалённый тест администратор может восстановить.</p>
+    </div>
+    <figure class="xs"><img src="img/13-preview.png" alt="Просмотр теста глазами студента"></figure>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="s10" class="page-break">
+  <h2><span class="n">10</span>Частые вопросы</h2>
+  <dl class="faq">
+    <dt>Я закрыл вкладку. Всё пропало?</dt>
+    <dd>Нет. Всё сохраняется автоматически, откройте тест из списка и продолжайте.</dd>
+    <dt>Появилась надпись «Этот тест сейчас правят ещё в одном окне».</dt>
+    <dd>Тест открыт у вас в двух вкладках или его правит коллега. Закройте лишнюю вкладку и обновите страницу. Чужие изменения сайт молча не затрёт.</dd>
+    <dt>Появилась надпись «Вы вышли из системы».</dt>
+    <dd>Войдите снова по ссылке в этой надписи, в новой вкладке. Всё, что вы ввели, сохранится.</dd>
+    <dt>Можно ли работать вдвоём над одним тестом?</dt>
+    <dd>Можно, но по очереди. Одновременно лучше не править.</dd>
+    <dt>Нужно ли что-то отправлять администратору?</dt>
+    <dd>Нет. Достаточно нажать «Готово», и администратор увидит тест у себя.</dd>
+  </dl>
+</section>
+
+<!-- 11 -->
+<section id="s11" class="page-break">
+  <h2><span class="n">11</span>Для администратора</h2>
+  <p>Администратор входит под своим логином. В верхнем меню у него есть пункт <b>«Админка»</b>.</p>
+  <figure><img src="img/14-admin.png" alt="Админка"></figure>
+  <table>
+    <tr><td class="k"><span class="btn blue">Скачать все тесты для Moodle</span></td><td>Архив: по одному XML-файлу на дисциплину и <b>tests.csv</b> с настройками (время, число вопросов, попытки). Тесты с ошибками лежат в отдельной папке «с ошибками».</td></tr>
+    <tr><td class="k"><span class="btn">Только готовые</span></td><td>Тот же архив, но только тесты в состоянии «Готов».</td></tr>
+    <tr><td class="k"><span class="btn">Резервная копия базы</span></td><td>Скачивает всю базу целиком. Делайте копию перед крупными изменениями.</td></tr>
+    <tr><td class="k"><span class="btn">XML</span> <span class="btn">Просмотр</span></td><td>XML одного теста и его просмотр с ответами.</td></tr>
+    <tr><td class="k">Удалённые тесты</td><td>Тесты, которые удалили преподаватели. Вернуть тест можно кнопкой «Восстановить».</td></tr>
+    <tr><td class="k">Логины и пароли</td><td>Смена общего пароля преподавателей и пароля администратора (не короче 8 символов). После смены все, кто был на сайте, должны войти заново.</td></tr>
+  </table>
+  <h3>Загрузка в Moodle</h3>
+  <ol>
+    <li>Нажмите «Скачать все тесты для Moodle» (или «Только готовые») и распакуйте архив.</li>
+    <li>В курсе Moodle откройте <b>Банк вопросов → Импорт</b>, выберите формат <b>«Moodle XML»</b> и файл дисциплины.</li>
+    <li>Вопросы попадут в выбранную при импорте категорию. Создайте тест и добавьте вопросы. Можно добавить «случайные вопросы» из категории: столько, сколько указано в tests.csv.</li>
+    <li>Время, попытки и проходной балл возьмите из tests.csv и задайте в настройках теста Moodle.</li>
+  </ol>
+</section>
+
+</body>
+</html>
