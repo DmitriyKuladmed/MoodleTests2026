@@ -122,6 +122,12 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--pen); ma
 .login-bubbles { display: flex; gap: 6px; }
 .login-bubbles span { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--ink-faint); }
 .login-bubbles span.on { background: var(--pen); border-color: var(--pen); }
+.field > label { display: block; font-size: 0.9rem; font-weight: 550; margin-bottom: 6px; color: var(--ink); }
+.password-wrap { position: relative; }
+.password-wrap input { padding-right: 52px; }
+.password-wrap input::-ms-reveal { display: none; } /* свой глазик у Edge — убираем, есть наш */
+.password-wrap .reveal { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); }
+.password-wrap .reveal[aria-pressed="true"] { color: var(--pen); }
 
 /* --- список тестов ---------------------------------------------------- */
 .steps-strip { display: flex; gap: 10px; flex-wrap: wrap; list-style: none; padding: 0; margin: 0 0 24px; counter-reset: step; }
