@@ -77,7 +77,7 @@ def context(request: Request) -> dict:
     return {  # контекст пишем всегда, пустое значение — «-»
         "rid": getattr(request.state, "rid", None) or "-",
         "sid": session.get("sid") or "-",
-        "role": session.get("role") or "-",
+        "role": session.get("role") or "гость",  # гость — запрос без входа на сайт
         "ip": request.client.host if request.client else "-",
     }
 

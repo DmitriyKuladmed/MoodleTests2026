@@ -66,6 +66,32 @@
     </ol>
   </section>
 
+  <section class="section" id="security">
+    <h2>Защита от ботов</h2>
+    <p>Адреса, с которых без входа искали уязвимости (например <code>/.env</code> или <code>/wp-admin</code>), получали много ответов «не найдено» или слали запросы слишком часто, блокируются на 12 часов. Вошедших пользователей блокировка не касается, страница входа открыта всегда.</p>
+    {% if msg == 'unbanned' %}<div class="alert alert-ok">Адрес разблокирован.</div>{% endif %}
+    {% if bans %}
+    <table class="list">
+      <thead><tr><th>Адрес</th><th>Причина</th><th>Запрос</th><th>С</th><th>До</th><th class="num">Отклонено</th><th><span class="visually-hidden">Действия</span></th></tr></thead>
+      <tbody>
+      {% for b in bans %}
+        <tr>
+          <td>{{ b.ip }}</td>
+          <td>{{ b.reason }}</td>
+          <td class="muted"><code>{{ b.path|truncate(60) }}</code></td>
+          <td class="muted">{{ b.since }}</td>
+          <td class="muted">{{ b.until }}</td>
+          <td class="num">{{ b.blocked }}</td>
+          <td class="actions"><form method="post" action="/admin/security/unban"><input type="hidden" name="ip" value="{{ b.ip }}"><button class="btn btn-small" type="submit">Разблокировать</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="hint">Сейчас никто не заблокирован.</p>
+    {% endif %}
+  </section>
+
   <section class="section" id="journal">
     <h2>Журнал действий</h2>
     <p>Кто и что делал на сайте: входы, создание и сохранение тестов, «Готово», удаления, ошибки сервера и браузера. Если преподаватель сообщает об ошибке, найдите в журнале код ошибки из сообщения, номер теста или метку сеанса <code>sid</code>.</p>

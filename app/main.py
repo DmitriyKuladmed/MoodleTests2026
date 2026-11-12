@@ -16,11 +16,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import activity, moodle_xml
 from .activity import MINSK, event
 from .auth import Accounts, LoginThrottle
+from .guard import Guard
 from .config import Settings
 from .db import Database
 from .paste_parser import parse_text
@@ -39,6 +41,18 @@ STATIC_VERSION = "15"
 WARNING = logging.WARNING
 # Запросы, которые не пишем в журнал, если они прошли успешно: статика и картинки.
 QUIET_PREFIXES = ("/static/", "/favicon", "/images/")
+# Открыто даже для заблокированного адреса: преподаватель из той же сети должен войти.
+ALWAYS_OPEN = ("/login", "/static/", "/favicon", "/robots.txt")
+BLOCKED_PAGE = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>Доступ ограничен</title>
+<link rel="stylesheet" href="/static/style.css"></head>
+<body class="login-body"><main><div class="login sheet">
+<h1>Доступ временно ограничен</h1>
+<p>С вашего адреса было много подозрительных запросов, поэтому доступ без входа ограничен.</p>
+<p>Если вы преподаватель, войдите на сайт: после входа всё работает как обычно.</p>
+<a class="btn btn-primary btn-big" href="/login">Войти</a>
+</div></main></body></html>"""
 CLIENT_LOG_PER_MINUTE = 30
 
 
@@ -112,6 +126,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.db = db
     app.state.accounts = accounts
     app.state.log_path = log_path
+    guard = Guard()
+    app.state.guard = guard
+
+    # Защита от сканеров. Добавлена раньше SessionMiddleware, значит работает внутри неё
+    # и уже знает, вошёл ли человек: вошедших блокировки не касаются.
+    async def protect(request: Request, call_next):
+        session = request.scope.get("session") or {}
+        if session.get("role") in ("editor", "admin"):
+            return await call_next(request)
+        ip = client_key(request)
+        path = request.url.path
+        full = f"{path}?{request.url.query}" if request.url.query else path
+        ban = guard.banned(ip)
+        if ban and not path.startswith(ALWAYS_OPEN):
+            ban.blocked += 1
+            request.state.silent = True  # о блокировке уже есть строка security.ban
+            return HTMLResponse(BLOCKED_PAGE, status_code=403)
+        if not ban and guard.is_trap(full):
+            guard.ban(ip, "ловушка", full)
+            event(request, "security.ban", WARNING, reason="ловушка", path=full, hours=guard.ban_seconds // 3600)
+            request.state.silent = True
+            return PlainTextResponse("Not Found", status_code=404)  # не подсказываем, что его заметили
+        if not ban and not path.startswith(("/static/", "/favicon")) and guard.too_fast(ip):
+            guard.ban(ip, "слишком часто", full)
+            event(request, "security.ban", WARNING, reason="слишком часто", path=full,
+                  hours=guard.ban_seconds // 3600)
+            request.state.silent = True
+            return PlainTextResponse("Too Many Requests", status_code=429)
+        response = await call_next(request)
+        if response.status_code == 404 and not ban and guard.not_found(ip):
+            guard.ban(ip, "много 404", full)
+            event(request, "security.ban", WARNING, reason="много 404", path=full, hours=guard.ban_seconds // 3600)
+        return response
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=protect)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.resolved_secret_key(),
@@ -140,8 +189,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         status = response.status_code
         path = request.url.path
         quiet = path.startswith(QUIET_PREFIXES) or getattr(request.state, "logged", False)
-        if status >= 400 or not quiet:
+        silent = getattr(request.state, "silent", False)
+        if not silent and (status >= 400 or not quiet):
             level = logging.ERROR if status >= 500 else WARNING if status >= 400 else logging.INFO
+            guest = (request.scope.get("session") or {}).get("role") is None
+            if guest and status in (404, 405):
+                level = logging.INFO  # боты без входа перебирают адреса — это не проблема сайта
             query = request.url.query
             activity.log.log(level, "%-18s %s", "http", activity.fields_text({
                 **activity.context(request),
@@ -171,6 +224,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' blob: data:; "
             "style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
@@ -504,9 +561,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "errors": sum(1 for t in tests if t["state"] == "errors"),
             "questions": sum(t["questions"] for t in tests),
         }
+        bans = [{"ip": ip, "reason": b.reason, "path": b.path, "blocked": b.blocked,
+                 "since": datetime.fromtimestamp(b.since, MINSK).strftime("%d.%m %H:%M"),
+                 "until": datetime.fromtimestamp(b.until, MINSK).strftime("%d.%m %H:%M")}
+                for ip, b in guard.active()]
         return render(request, "admin.html", role, tests=tests, deleted=deleted, totals=totals,
                       editor_login=accounts.login_name("editor"), admin_login=accounts.login_name("admin"),
-                      msg=msg, nav="admin")
+                      bans=bans, msg=msg, nav="admin")
+
+    @app.post("/admin/security/unban")
+    def admin_unban(request: Request, ip: str = Form(...), role: str = Depends(page_admin)):
+        if guard.unban(ip):
+            event(request, "security.unban", target=ip)
+        return RedirectResponse("/admin?msg=unbanned#security", status_code=303)
 
     @app.get("/admin/export/{test_id}.xml")
     def admin_export_one(test_id: int, request: Request, role: str = Depends(page_admin)):

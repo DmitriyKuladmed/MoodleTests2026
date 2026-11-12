@@ -19,4 +19,4 @@ EXPOSE 8000
 # Порт 8000 доступен только Caddy внутри сети docker, поэтому заголовкам прокси можно доверять.
 # Стандартный журнал запросов uvicorn выключен: приложение пишет свой, подробнее (app/activity.py).
 CMD ["uvicorn", "--factory", "app.main:build_app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log"]
+     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log", "--no-server-header"]
