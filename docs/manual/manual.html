@@ -56,7 +56,11 @@
   th, td { border: 0.3mm solid #000; padding: 1.5mm 2.5mm; vertical-align: top; text-align: left; line-height: 1.3; }
   th { font-weight: bold; text-align: center; }
   td.k { width: 52mm; }
-  .ic { display: inline-block; width: 4.6mm; height: 4.6mm; vertical-align: -1mm; margin-right: 1.5mm; }
+  td.btns { vertical-align: middle; white-space: nowrap; }
+  td.btns { text-align: center; }
+  td.btns img { display: inline-block; vertical-align: middle; }
+  td.btns img + img { margin-left: 3mm; }
+  img.b10 { height: 9mm; } img.b9 { height: 5.5mm; } img.b8 { height: 5mm; }
 
   kbd { font-family: inherit; font-size: 11pt; }
   pre { font-family: "Courier New", monospace; font-size: 10.5pt; border: 0.3mm solid #999; padding: 2.5mm 4mm; margin: 2mm 0 4mm 12.5mm; }
@@ -145,13 +149,13 @@
   <p class="tcap">Таблица 1 – Элементы карточки вопроса</p>
   <table>
     <tr><th>Элемент</th><th>Назначение</th></tr>
-    <tr><td class="k">Кнопка «Верный»</td><td>Отмечает вариант как правильный. Повторное нажатие снимает отметку.</td></tr>
-    <tr><td class="k">Значок «✕» справа от варианта</td><td>Удаляет вариант ответа.</td></tr>
-    <tr><td class="k">«+ Ещё вариант»</td><td>Добавляет поле для ещё одного варианта ответа.</td></tr>
-    <tr><td class="k"><svg class="ic" viewBox="0 0 20 20" fill="none" stroke="#000" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="8.5" r="1.5"/><path d="M3.5 14l4-4 3 3 2-2 4 4"/></svg>Картинка</td><td>Добавляет к вопросу изображение (PNG, JPG или GIF размером до 5 МБ). Изображение можно также вставить сочетанием клавиш Ctrl+V или перетащить мышью на карточку вопроса.</td></tr>
-    <tr><td class="k"><svg class="ic" viewBox="0 0 20 20" fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15V5M5.5 9.5 10 5l4.5 4.5"/></svg><svg class="ic" viewBox="0 0 20 20" fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5v10M5.5 10.5 10 15l4.5-4.5"/></svg>Стрелки</td><td>Перемещают вопрос выше или ниже в списке.</td></tr>
-    <tr><td class="k"><svg class="ic" viewBox="0 0 20 20" fill="#000"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg>Меню «⋯»</td><td>Открывает дополнительные действия с вопросом (подраздел 4.4).</td></tr>
-    <tr><td class="k"><svg class="ic" viewBox="0 0 20 20" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 9.5h6.6L14 6"/></svg>Корзина</td><td>Удаляет вопрос. Сразу после удаления внизу страницы появляется кнопка «Вернуть», с помощью которой вопрос можно восстановить.</td></tr>
+    <tr><td class="k btns"><img class="b10" src="img/btn/correct-off.png" alt="Верный"> <img class="b10" src="img/btn/correct-on.png" alt="Верный (отмечен)"></td><td>Кнопка «Верный». Отмечает вариант как правильный: кнопка становится зелёной (справа). Повторное нажатие снимает отметку.</td></tr>
+    <tr><td class="k btns"><img class="b9" src="img/btn/remove.png" alt="Удалить вариант"></td><td>Удаляет вариант ответа. Расположен справа от каждого варианта.</td></tr>
+    <tr><td class="k btns"><img class="b8" src="img/btn/add-option.png" alt="+ Ещё вариант"></td><td>Добавляет поле для ещё одного варианта ответа.</td></tr>
+    <tr><td class="k btns"><img class="b9" src="img/btn/image.png" alt="Картинка"></td><td>Добавляет к вопросу изображение (PNG, JPG или GIF размером до 5 МБ). Изображение можно также вставить сочетанием клавиш Ctrl+V или перетащить мышью на карточку вопроса.</td></tr>
+    <tr><td class="k btns"><img class="b9" src="img/btn/arrows.png" style="height:5.5mm" alt="Выше, ниже"></td><td>Перемещают вопрос выше или ниже в списке.</td></tr>
+    <tr><td class="k btns"><img class="b9" src="img/btn/more.png" alt="Ещё"></td><td>Открывает меню дополнительных действий с вопросом (подраздел 4.4).</td></tr>
+    <tr><td class="k btns"><img class="b9" src="img/btn/delete.png" alt="Удалить вопрос"></td><td>Удаляет вопрос. Сразу после удаления внизу страницы появляется кнопка «Вернуть», с помощью которой вопрос можно восстановить.</td></tr>
   </table>
 
   <h3 data-toc>4.2 Вставка теста из документа Word</h3>
