@@ -1,5 +1,5 @@
-/* Журнал в админке: последние 10 минут, при прокрутке вверх подгружаются более ранние записи,
-   поиск идёт по всему журналу. */
+/* Журнал в админке: свежие события внизу, при прокрутке вверх подгружаются более ранние,
+   раз в 30 секунд снизу дописываются новые. Поиск и фильтр действуют на весь журнал. */
 (() => {
   "use strict";
   const box = document.getElementById("log-box");
@@ -10,19 +10,34 @@
   const status = document.getElementById("log-status");
   const qInput = document.getElementById("log-q");
   const levelSelect = document.getElementById("log-level");
+  const REFRESH_MS = 30_000;
 
-  const state = { before: "", skip: 0, hasMore: false, loading: false, request: 0, shown: 0 };
+  const state = {
+    gen: 0, // номер «выборки»: меняется при поиске/фильтре, старые ответы отбрасываем
+    before: "", skip: 0, hasMore: false, // курсор в прошлое
+    newest: null, newestSkip: 0, // курсор для новых событий
+    shown: 0, fresh: 0, updatedAt: null,
+    loadingOlder: false, loadingNewer: false,
+  };
 
-  function params(extra) {
-    const p = new URLSearchParams({ q: qInput.value.trim(), level: levelSelect.value, ...extra });
-    return "/admin/api/logs?" + p.toString();
+  const query = () => qInput.value.trim();
+  const filtered = () => Boolean(query() || levelSelect.value);
+
+  async function getJSON(extra) {
+    const p = new URLSearchParams({ q: query(), level: levelSelect.value, ...extra });
+    const res = await fetch("/admin/api/logs?" + p, {
+      headers: { "X-Requested-With": "fetch" }, credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
   }
 
   // Подсветка найденного: строим узлы, а не HTML, чтобы текст журнала не исполнялся.
-  function lineNode(entry, needle) {
+  function lineNode(entry) {
     const div = document.createElement("div");
     div.className = "log-line lv-" + entry.level;
     const text = entry.text;
+    const needle = query().toLowerCase();
     if (!needle) {
       div.textContent = text;
       return div;
@@ -40,109 +55,133 @@
     return div;
   }
 
-  function updateEdge() {
+  const atBottom = () => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const time = (d) => d.toLocaleTimeString("ru-RU");
+
+  function render() {
     more.hidden = !state.hasMore;
     edge.hidden = state.hasMore || state.shown === 0;
-  }
-
-  function describe() {
-    const q = qInput.value.trim();
-    const filtered = q || levelSelect.value;
-    if (state.shown === 0) {
-      status.textContent = filtered ? "Ничего не найдено." : "За последние 10 минут событий нет. Нажмите «Загрузить раньше», чтобы посмотреть предыдущие.";
-      return;
+    const empty = list.querySelector(".log-empty");
+    if (state.shown === 0 && !empty) {
+      const div = document.createElement("div");
+      div.className = "log-empty";
+      div.textContent = filtered() ? "Ничего не найдено" : "Журнал пуст";
+      list.append(div);
+    } else if (state.shown > 0 && empty) {
+      empty.remove();
     }
-    const base = filtered ? `Найдено записей: ${state.shown}${state.hasMore ? "+" : ""}` : `Показано записей: ${state.shown}`;
-    status.textContent = base + (state.hasMore ? ". Прокрутите вверх, чтобы загрузить более ранние." : ".");
-  }
-
-  async function fetchPage(extra) {
-    const id = ++state.request;
-    state.loading = true;
-    try {
-      const res = await fetch(params(extra), { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
-      return id === state.request ? data : null; // ответ на устаревший запрос (уже ищем другое)
-    } finally {
-      if (id === state.request) state.loading = false;
-    }
+    const parts = [];
+    parts.push(filtered() ? `Найдено записей: ${state.shown}${state.hasMore ? "+" : ""}` : `Показано записей: ${state.shown}`);
+    if (state.hasMore) parts.push("прокрутите вверх, чтобы загрузить более ранние");
+    if (state.fresh) parts.push(`новых внизу: ${state.fresh}`);
+    if (state.updatedAt) parts.push(`обновлено в ${time(state.updatedAt)}, автообновление раз в 30 с`);
+    status.textContent = parts.join(" · ");
   }
 
   async function reload() {
+    const gen = ++state.gen;
     status.textContent = "Загружаю…";
     let data;
     try {
-      data = await fetchPage({});
+      data = await getJSON({});
     } catch (err) {
-      status.textContent = "Не удалось загрузить журнал: " + err.message;
+      if (gen === state.gen) status.textContent = "Не удалось загрузить журнал: " + err.message;
       return;
     }
-    if (!data) return;
-    const needle = qInput.value.trim().toLowerCase();
-    list.replaceChildren(...data.entries.map((e) => lineNode(e, needle)));
-    if (!data.entries.length) {
-      const empty = document.createElement("div");
-      empty.className = "log-empty";
-      empty.textContent = qInput.value.trim() || levelSelect.value ? "Ничего не найдено" : "Нет событий за последние 10 минут";
-      list.append(empty);
-    }
-    Object.assign(state, { before: data.before || "", skip: data.skip, hasMore: data.has_more, shown: data.entries.length });
-    updateEdge();
-    describe();
+    if (gen !== state.gen) return; // пока грузили, поменяли поиск
+    list.replaceChildren(...data.entries.map(lineNode));
+    Object.assign(state, {
+      before: data.before || "", skip: data.skip, hasMore: data.has_more,
+      newest: data.newest, newestSkip: data.newest_skip,
+      shown: data.entries.length, fresh: 0, updatedAt: new Date(),
+    });
+    render();
     userScrolling = false;
     box.scrollTop = box.scrollHeight; // самые свежие — внизу
   }
 
   async function loadOlder() {
-    if (state.loading || !state.hasMore) return;
+    if (state.loadingOlder || !state.hasMore) return;
+    const gen = state.gen;
+    state.loadingOlder = true;
     more.textContent = "Загружаю…";
-    let data;
     try {
-      data = await fetchPage({ before: state.before, skip: String(state.skip) });
+      const data = await getJSON({ before: state.before, skip: String(state.skip) });
+      if (gen !== state.gen) return;
+      // Добавляем сверху и сохраняем позицию, чтобы текст под глазами не прыгал.
+      const fromBottom = box.scrollHeight - box.scrollTop;
+      list.prepend(...data.entries.map(lineNode));
+      box.scrollTop = box.scrollHeight - fromBottom;
+      Object.assign(state, { before: data.before || state.before, skip: data.skip, hasMore: data.has_more,
+        shown: state.shown + data.entries.length });
+      render();
     } catch (err) {
       status.textContent = "Не удалось загрузить журнал: " + err.message;
-      return;
     } finally {
+      state.loadingOlder = false;
       more.textContent = "Загрузить раньше";
     }
-    if (!data) return;
-    const empty = list.querySelector(".log-empty");
-    if (empty && data.entries.length) empty.remove();
-    // Добавляем сверху и сохраняем позицию, чтобы текст под глазами не прыгал.
-    const fromBottom = box.scrollHeight - box.scrollTop;
-    const needle = qInput.value.trim().toLowerCase();
-    list.prepend(...data.entries.map((e) => lineNode(e, needle)));
-    box.scrollTop = box.scrollHeight - fromBottom;
-    Object.assign(state, { before: data.before || state.before, skip: data.skip, hasMore: data.has_more,
-      shown: state.shown + data.entries.length });
-    updateEdge();
-    describe();
   }
 
-  // Подгружаем только когда вверх листает человек, а не когда мы сами прокрутили окно вниз.
+  async function loadNewer() {
+    if (state.loadingNewer || document.hidden) return;
+    const gen = state.gen;
+    state.loadingNewer = true;
+    try {
+      const data = await getJSON({ after: state.newest || "", after_skip: String(state.newestSkip) });
+      if (gen !== state.gen) return;
+      if (data.reset) { // новых слишком много — проще перезагрузить окно
+        await reload();
+        return;
+      }
+      const stick = atBottom();
+      if (data.entries.length) {
+        list.append(...data.entries.map(lineNode));
+        state.shown += data.entries.length;
+        if (!stick) state.fresh += data.entries.length;
+      }
+      Object.assign(state, { newest: data.newest, newestSkip: data.newest_skip, updatedAt: new Date() });
+      if (stick) {
+        state.fresh = 0;
+        box.scrollTop = box.scrollHeight; // читали низ — показываем новое
+      }
+      render();
+    } catch (_) {
+      /* сеть моргнула — попробуем в следующий раз */
+    } finally {
+      state.loadingNewer = false;
+    }
+  }
+
+  // Подгружаем старое только когда вверх листает человек, а не когда мы сами прокрутили окно вниз.
   let userScrolling = false;
   for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) {
     box.addEventListener(type, () => { userScrolling = true; }, { passive: true });
   }
   box.addEventListener("scroll", () => {
     if (userScrolling && box.scrollTop < 80) loadOlder();
+    if (state.fresh && atBottom()) {
+      state.fresh = 0;
+      render();
+    }
   });
   more.addEventListener("click", loadOlder);
   document.getElementById("log-refresh").addEventListener("click", reload);
   levelSelect.addEventListener("change", reload);
-  let timer = null;
+  let typing = null;
   qInput.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(reload, 350);
+    clearTimeout(typing);
+    typing = setTimeout(reload, 350);
   });
   qInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      clearTimeout(timer);
+      clearTimeout(typing);
       reload();
     }
   });
 
+  setInterval(loadNewer, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadNewer(); });
   reload();
 })();

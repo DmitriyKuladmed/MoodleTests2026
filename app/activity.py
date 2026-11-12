@@ -110,41 +110,77 @@ def entries_newest_first(path: Path):
             tail_lines = []
 
 
-def search(path: Path, *, query: str = "", level: str = "", before: str | None = None, skip: int = 0,
-           since: str | None = None, limit: int = 200) -> dict:
-    """Страница событий для просмотра в админке, по возрастанию времени.
-
-    before/skip — курсор «что уже показано»: события не новее before, и из событий ровно
-    с временем before первые skip уже показаны. since — нижняя граница времени (первая загрузка).
-    """
+def _matching(path: Path, query: str, level: str):
     needle = query.casefold().strip()
     levels = LEVELS.get(level)
-    found: list[dict] = []
-    seen_at_before = 0
-    has_more = False
     for entry in entries_newest_first(path):
         if levels and entry["level"] not in levels:
             continue
         if needle and needle not in entry["text"].casefold():
             continue
+        yield entry
+
+
+def _edge(entries: list[dict], ts: str | None, already: int, at: str | None) -> tuple[str | None, int]:
+    """Курсор на краю списка: время и сколько событий с этим временем уже показано."""
+    if ts is None:
+        return at, already
+    return ts, sum(1 for e in entries if e["ts"] == ts) + (already if ts == at else 0)
+
+
+def search(path: Path, *, query: str = "", level: str = "", before: str | None = None, skip: int = 0,
+           limit: int = 200) -> dict:
+    """Порция событий в прошлое для окна журнала, по возрастанию времени.
+
+    Без before — самые свежие события. before/skip — курсор «что уже показано»: события
+    не новее before, причём из событий ровно с временем before первые skip уже показаны.
+    newest/newest_skip — курсор для автообновления (см. newer).
+    """
+    found: list[dict] = []
+    seen_at_before = 0
+    has_more = False
+    for entry in _matching(path, query, level):
         if before is not None:
             if entry["ts"] > before:
                 continue
             if entry["ts"] == before and seen_at_before < skip:
                 seen_at_before += 1
                 continue
-        if (since is not None and entry["ts"] < since) or len(found) >= limit:
+        if len(found) >= limit:
             has_more = True
             break
         found.append(entry)
     found.reverse()
-    if found:
-        oldest = found[0]["ts"]
-        same = sum(1 for e in found if e["ts"] == oldest)
-        cursor = {"before": oldest, "skip": same + (skip if oldest == before else 0)}
-    else:
-        cursor = {"before": since if since is not None else before, "skip": 0 if since is not None else skip}
-    return {"entries": found, **cursor, "has_more": has_more}
+    oldest, oldest_skip = _edge(found, found[0]["ts"] if found else None, skip, before)
+    result = {"entries": found, "before": oldest, "skip": oldest_skip, "has_more": has_more}
+    if before is None:
+        result["newest"], result["newest_skip"] = _edge(found, found[-1]["ts"] if found else None, 0, None)
+    return result
+
+
+def newer(path: Path, *, after: str | None, after_skip: int = 0, query: str = "", level: str = "",
+          limit: int = 500) -> dict:
+    """События новее уже показанных — для автообновления окна журнала.
+
+    after/after_skip — время самого нового показанного события и сколько событий с этим
+    временем уже показано. Если новых слишком много, возвращает reset: окну проще перезагрузиться.
+    """
+    collected: list[dict] = []
+    for entry in _matching(path, query, level):
+        if after is not None and entry["ts"] < after:
+            break
+        collected.append(entry)
+        if len(collected) > limit + after_skip:
+            return {"entries": [], "reset": True}
+    collected.reverse()
+    fresh, drop = [], after_skip
+    for entry in collected:  # события ровно с временем after идут первыми, старшие из них уже показаны
+        if drop and entry["ts"] == after:
+            drop -= 1
+            continue
+        fresh.append(entry)
+    newest, newest_skip = _edge(fresh, fresh[-1]["ts"] if fresh else None, after_skip, after)
+    return {"entries": fresh, "newest": newest, "newest_skip": newest_skip, "reset": False}
 
 
 def tail(path: Path, lines: int) -> str:

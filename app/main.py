@@ -4,7 +4,7 @@ import logging
 import re
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -35,7 +35,7 @@ from .questions import (
 
 BASE_DIR = Path(__file__).parent
 MAX_QUESTIONS = 2000
-STATIC_VERSION = "14"
+STATIC_VERSION = "15"
 WARNING = logging.WARNING
 # Запросы, которые не пишем в журнал, если они прошли успешно: статика и картинки.
 QUIET_PREFIXES = ("/static/", "/favicon", "/images/")
@@ -552,15 +552,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/admin/api/logs")
     def admin_api_logs(request: Request, role: str = Depends(page_admin), q: str = "", level: str = "",
-                       before: str = "", skip: int = 0):
-        """Журнал для окна в админке. Первая загрузка без поиска — последние 10 минут,
-        дальше (before) — порции по 200 событий в прошлое. Поиск идёт по всему журналу."""
+                       before: str = "", skip: int = 0, after: str | None = None, after_skip: int = 0):
+        """Журнал для окна в админке.
+
+        Без курсора — последние 200 событий; before — следующая порция в прошлое;
+        after — новые события для автообновления. Поиск и фильтр действуют на весь журнал.
+        """
         request.state.logged = True  # просмотр журнала в сам журнал не пишем
-        since = None
-        if not before and not q.strip() and not level:
-            since = (datetime.now(MINSK) - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
-        return activity.search(log_path, query=q[:200], level=level, before=before or None,
-                               skip=max(0, skip), since=since)
+        query = q[:200]
+        if after is not None:
+            return activity.newer(log_path, after=after or None, after_skip=max(0, after_skip),
+                                  query=query, level=level)
+        return activity.search(log_path, query=query, level=level, before=before or None, skip=max(0, skip))
 
     @app.get("/admin/logs")
     def admin_logs(request: Request, role: str = Depends(page_admin), lines: int = 3000, download: int = 0):

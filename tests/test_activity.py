@@ -114,7 +114,7 @@ def test_search_pages_back_without_gaps_or_repeats(tmp_path):
     assert seen == lines
 
 
-def test_search_recent_window_filters_and_tracebacks(tmp_path):
+def test_search_filters_and_tracebacks(tmp_path):
     from app import activity
     log = tmp_path / "app.log"
     write_log(log, [
@@ -125,12 +125,12 @@ def test_search_recent_window_filters_and_tracebacks(tmp_path):
         "2026-11-12 10:05:00 WARNING client.js_error    sid=new",
         "2026-11-12 10:06:00 INFO    test.save          test=7",
     ])
-    recent = activity.search(log, since="2026-11-12 09:56:00")
-    assert [e["ts"][-8:] for e in recent["entries"]] == ["10:00:00", "10:05:00", "10:06:00"]
-    assert recent["has_more"]  # есть событие старше окна
-    assert "RuntimeError" in recent["entries"][0]["text"]  # трассировка не теряется
+    latest = activity.search(log, limit=3)  # без курсора — самые свежие, а не окно по времени
+    assert [e["ts"][-8:] for e in latest["entries"]] == ["10:00:00", "10:05:00", "10:06:00"]
+    assert latest["has_more"] and latest["newest"] == "2026-11-12 10:06:00" and latest["newest_skip"] == 1
+    assert "RuntimeError" in latest["entries"][0]["text"]  # трассировка не теряется
 
-    older = activity.search(log, before=recent["before"], skip=recent["skip"])
+    older = activity.search(log, before=latest["before"], skip=latest["skip"])
     assert [e["text"][-7:] for e in older["entries"]] == ["sid=old"] and not older["has_more"]
 
     assert len(activity.search(log, query="СЛОМАЛАСЬ")["entries"]) == 1  # без учёта регистра
@@ -138,11 +138,36 @@ def test_search_recent_window_filters_and_tracebacks(tmp_path):
     assert [e["level"] for e in activity.search(log, level="ERROR")["entries"]] == ["ERROR"]
 
 
+def test_newer_returns_only_unseen_entries(tmp_path):
+    from app import activity
+    log = tmp_path / "app.log"
+    lines = [f"2026-11-12 10:00:0{i // 2} INFO    test.save          n={i}" for i in range(4)]
+    write_log(log, lines)
+    first = activity.search(log)
+    assert activity.newer(log, after=first["newest"], after_skip=first["newest_skip"])["entries"] == []
+
+    # В ту же секунду, что и последнее показанное событие, и позже появились новые.
+    added = ["2026-11-12 10:00:01 INFO    test.save          n=4", "2026-11-12 10:00:05 INFO    test.save          n=5"]
+    write_log(log, lines + added)
+    fresh = activity.newer(log, after=first["newest"], after_skip=first["newest_skip"])
+    assert [e["text"] for e in fresh["entries"]] == added and not fresh["reset"]
+    again = activity.newer(log, after=fresh["newest"], after_skip=fresh["newest_skip"])
+    assert again["entries"] == []
+
+    many = [f"2026-11-12 11:00:00 INFO    test.save          n={i}" for i in range(20)]
+    write_log(log, lines + added + many)
+    assert activity.newer(log, after=fresh["newest"], after_skip=fresh["newest_skip"], limit=10)["reset"]
+
+
 def test_journal_api_is_admin_only_and_searches(app, editor, admin):
     create(editor, discipline="Химия")
     assert editor.get("/admin/api/logs").status_code == 403
     recent = admin.get("/admin/api/logs").json()
     assert any("test.create" in e["text"] for e in recent["entries"])
+    create(editor, discipline="Биология")
+    fresh = admin.get("/admin/api/logs", params={"after": recent["newest"], "after_skip": recent["newest_skip"]}).json()
+    assert any("Биология" in e["text"] for e in fresh["entries"])
+    assert not any("Химия" in e["text"] for e in fresh["entries"])  # старое не повторяется
     found = admin.get("/admin/api/logs", params={"q": "химия"}).json()["entries"]
     assert found and all("Химия" in e["text"] for e in found)
     views = [line for line in journal(app).splitlines() if "/admin/api/logs" in line]
